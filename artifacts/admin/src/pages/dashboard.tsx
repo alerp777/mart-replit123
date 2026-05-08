@@ -107,8 +107,13 @@ function LiveMetricsStrip() {
   const sosThreshold  = parseInt(getSetting("dashboard_sos_threshold")  || "3",  10);
   const pendThreshold = parseInt(getSetting("dashboard_pending_threshold") || "30", 10);
 
-  const sosCnt  = events.filter(e => e.type === "rider:sos").length;
-  const newOrd  = events.filter(e => e.type === "order:new").length;
+  // Use real DB-backed live stats for threshold comparison (not activity-feed event counts)
+  const { data: liveStats } = useStats();
+  const pendingOrders = (liveStats as any)?.pendingOrders ?? 0;
+  const activeSos     = (liveStats as any)?.activeSos     ?? 0;
+
+  const sosCnt = activeSos;
+  const newOrd = pendingOrders;
 
   const sosBreached  = sosCnt  >= sosThreshold;
   const ordBreached  = newOrd  >= pendThreshold;
@@ -153,7 +158,7 @@ function LiveMetricsStrip() {
         <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm">
           <Bell className="w-4 h-4 text-red-600 animate-pulse shrink-0" />
           <span className="text-red-800 font-medium">
-            SOS alert: <strong>{sosCnt}</strong> SOS event{sosCnt !== 1 ? "s" : ""} — threshold of {sosThreshold} exceeded. Immediate rider check required.
+            SOS alert: <strong>{sosCnt}</strong> active unresolved SOS — threshold of {sosThreshold} exceeded. Immediate rider check required.
           </span>
         </div>
       )}

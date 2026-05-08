@@ -5,6 +5,7 @@ import {
   walletTransactionsTable,
   notificationsTable,
   ordersTable, pharmacyOrdersTable, parcelBookingsTable, ridesTable, rideBidsTable,
+  platformSettingsTable,
 } from "@workspace/db/schema";
 import { eq, desc, count, sum, and, gte, lte, sql, or, ilike, asc, isNull, isNotNull, avg, ne } from "drizzle-orm";
 import {
@@ -727,61 +728,75 @@ router.patch("/orders/:id/assign-rider", async (req, res) => {
 
 /* ── PATCH /admin/vendors/:id/commission — set per-vendor commission override ── */
 
-/* ── Return requests (lightweight — no dedicated DB table, stored in-memory per session) ── */
-const returnStore = new Map<string, { id: string; reason: string; amount: number; status: string; createdAt: string }[]>();
+/* ── Helpers: DB-backed return/dispute storage via platform_settings key-value ── */
+type ReturnRecord  = { id: string; reason: string; amount: number; status: string; createdAt: string };
+type DisputeRecord = { id: string; type: string; note: string; status: string; createdAt: string };
 
+async function loadJson<T>(key: string): Promise<T[]> {
+  const row = await db.select({ value: platformSettingsTable.value }).from(platformSettingsTable).where(eq(platformSettingsTable.key, key)).limit(1).then(r => r[0]);
+  if (!row) return [];
+  try { return JSON.parse(row.value) as T[]; } catch { return []; }
+}
+
+async function saveJson<T>(key: string, data: T[]): Promise<void> {
+  const value = JSON.stringify(data);
+  await db.insert(platformSettingsTable).values({ key, value, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+}
+
+/* ── Return requests (DB-backed via platform_settings) ── */
 router.get("/orders/:id/returns", async (req, res) => {
   const orderId = req.params["id"]!;
-  sendSuccess(res, returnStore.get(orderId) ?? []);
+  sendSuccess(res, await loadJson<ReturnRecord>(`return_log_${orderId}`));
 });
 
 router.post("/orders/:id/return", async (req, res) => {
   const orderId = req.params["id"]!;
   const { reason, amount } = req.body;
   if (!reason) { sendValidationError(res, "reason is required"); return; }
-  const entry = { id: generateId(), reason: String(reason), amount: parseFloat(String(amount)) || 0, status: "pending", createdAt: new Date().toISOString() };
-  const existing = returnStore.get(orderId) ?? [];
-  returnStore.set(orderId, [...existing, entry]);
+  const entry: ReturnRecord = { id: generateId(), reason: String(reason), amount: parseFloat(String(amount)) || 0, status: "pending", createdAt: new Date().toISOString() };
+  const existing = await loadJson<ReturnRecord>(`return_log_${orderId}`);
+  await saveJson(`return_log_${orderId}`, [...existing, entry]);
+  addAuditEntry({ action: "order_return_logged", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Return logged for order ${orderId}: ${entry.reason}`, result: "success" });
   sendSuccess(res, entry, 201);
 });
 
 router.patch("/orders/:id/returns/:returnId", async (req, res) => {
   const { id: orderId, returnId } = req.params as { id: string; returnId: string };
   const { status } = req.body;
-  const existing = returnStore.get(orderId) ?? [];
+  const existing = await loadJson<ReturnRecord>(`return_log_${orderId}`);
   const idx = existing.findIndex(r => r.id === returnId);
   if (idx === -1) { sendNotFound(res, "Return request not found"); return; }
   existing[idx] = { ...existing[idx]!, status: String(status ?? "pending") };
-  returnStore.set(orderId, existing);
+  await saveJson(`return_log_${orderId}`, existing);
   sendSuccess(res, existing[idx]);
 });
 
-/* ── Dispute requests (lightweight — no dedicated DB table) ── */
-const disputeStore = new Map<string, { id: string; type: string; note: string; status: string; createdAt: string }[]>();
-
+/* ── Dispute requests (DB-backed via platform_settings) ── */
 router.get("/orders/:id/disputes", async (req, res) => {
   const orderId = req.params["id"]!;
-  sendSuccess(res, disputeStore.get(orderId) ?? []);
+  sendSuccess(res, await loadJson<DisputeRecord>(`dispute_log_${orderId}`));
 });
 
 router.post("/orders/:id/dispute", async (req, res) => {
   const orderId = req.params["id"]!;
   const { type, note } = req.body;
   if (!note) { sendValidationError(res, "note is required"); return; }
-  const entry = { id: generateId(), type: String(type ?? "other"), note: String(note), status: "open", createdAt: new Date().toISOString() };
-  const existing = disputeStore.get(orderId) ?? [];
-  disputeStore.set(orderId, [...existing, entry]);
+  const entry: DisputeRecord = { id: generateId(), type: String(type ?? "other"), note: String(note), status: "open", createdAt: new Date().toISOString() };
+  const existing = await loadJson<DisputeRecord>(`dispute_log_${orderId}`);
+  await saveJson(`dispute_log_${orderId}`, [...existing, entry]);
+  addAuditEntry({ action: "order_dispute_logged", ip: getClientIp(req), adminId: (req as AdminRequest).adminId, details: `Dispute logged for order ${orderId}: ${entry.note}`, result: "success" });
   sendSuccess(res, entry, 201);
 });
 
 router.patch("/orders/:id/disputes/:disputeId", async (req, res) => {
   const { id: orderId, disputeId } = req.params as { id: string; disputeId: string };
   const { status } = req.body;
-  const existing = disputeStore.get(orderId) ?? [];
+  const existing = await loadJson<DisputeRecord>(`dispute_log_${orderId}`);
   const idx = existing.findIndex(d => d.id === disputeId);
   if (idx === -1) { sendNotFound(res, "Dispute not found"); return; }
   existing[idx] = { ...existing[idx]!, status: String(status ?? "open") };
-  disputeStore.set(orderId, existing);
+  await saveJson(`dispute_log_${orderId}`, existing);
   sendSuccess(res, existing[idx]);
 });
 

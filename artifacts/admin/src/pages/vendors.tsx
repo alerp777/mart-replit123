@@ -651,7 +651,7 @@ export default function Vendors() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-bold text-sm text-foreground truncate">{v.storeName || "Unnamed Store"}</p>
                         {getStatusBadge(v)}
-                        <TierBadge tier={v.tier} />
+                        <TierBadge tier={v.accountLevel as VendorTier} />
                         {(deliveryMode === "stores" || deliveryMode === "both") && (
                           whitelistedVendorIds.has(v.id)
                             ? <Badge
@@ -738,7 +738,7 @@ export default function Vendors() {
                     {/* Tier selector */}
                     <div className="relative">
                       <select
-                        value={v.tier || ""}
+                        value={v.accountLevel || ""}
                         onChange={e => { if (e.target.value) handleTierChange(v.id, e.target.value as VendorTier); }}
                         disabled={tierUpdating === v.id || !canWrite}
                         className="h-9 pl-2 pr-6 text-xs rounded-xl border border-amber-200 bg-amber-50 text-amber-700 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:opacity-50"
