@@ -3,7 +3,7 @@ import * as Notifications from "expo-notifications";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
-import { setBaseUrl, setAuthTokenGetter, setOnUnauthorized, setOnApiError, setMaxRetryAttempts, setRetryBackoffBaseMs } from "@workspace/api-client-react";
+import { setBaseUrl, setAuthTokenGetter, setOnApiError, setMaxRetryAttempts, setRetryBackoffBaseMs } from "@workspace/api-client-react";
 import * as Linking from "expo-linking";
 import { loadCoreFonts, loadUrduFonts } from "@/utils/fonts";
 import { router, Stack, useSegments, type Href } from "expo-router";
@@ -657,20 +657,19 @@ function RootLayoutNav() {
   const prevUserRef = useRef<string | null>(null);
 
   /* Keep the api-client-react auth token getter in sync with the session token.
-     AuthContext.tsx is the primary owner of this wiring (via registerAuth /
-     doLogout), but this secondary sync ensures the getter is always current
-     even if the token changes through paths that don't go through registerAuth. */
+     AuthContext.tsx is the primary owner of all auth-client wiring (via
+     registerAuth / doLogout) — it sets setAuthTokenGetter, setOnUnauthorized,
+     setRefreshTokenGetter, and setOnTokenRefreshed with the full nuanced logic
+     for suspension, wallet_frozen, role-denied, and session-expiry flows.
+     This secondary sync only updates the token getter when token state changes
+     through paths outside of registerAuth (e.g. token state rehydration). */
   useEffect(() => {
     if (token) {
       setAuthTokenGetter(() => token);
-      setOnUnauthorized(async (statusCode?: number) => {
-        if (statusCode !== 403) await logout();
-      });
     } else {
       setAuthTokenGetter(null);
-      setOnUnauthorized(null);
     }
-  }, [token, logout]);
+  }, [token]);
 
   const installedVersion = Constants.expoConfig?.version ?? "1.0.0";
   const minAppVersion = config.compliance?.minAppVersion ?? "1.0.0";
