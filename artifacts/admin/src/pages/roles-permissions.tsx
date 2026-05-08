@@ -11,7 +11,7 @@ import { PageHeader } from "@/components/shared";
 import {
   Shield, Plus, Save, Trash2, RefreshCw, Search, Lock, Users, KeyRound, Pencil,
   AlertTriangle, ShoppingCart, Package, BarChart2, CreditCard, Settings2,
-  ClipboardCheck, Truck, Store, Tag, Globe, FileText, Database, Zap,
+  ClipboardCheck, Truck, Store, Tag, Globe, FileText, Database, Zap, LayoutGrid,
 } from "lucide-react";
 import { fetchAdmin } from "@/lib/adminFetcher";
 import { Button } from "@/components/ui/button";
@@ -232,6 +232,124 @@ function StatsBar({ roles, catalog, adminRoleMap, adminsLoaded, loading }: Stats
   );
 }
 
+/* ── Permission Matrix component ─────────────────────────────────── */
+
+function PermissionMatrix({ roles, catalog, loading }: { roles: RbacRole[]; catalog: PermissionDef[]; loading: boolean }) {
+  const [matrixSearch, setMatrixSearch] = useState("");
+  const categorized = useMemo(() => {
+    const map = new Map<string, PermissionDef[]>();
+    for (const p of catalog) {
+      const q = matrixSearch.toLowerCase();
+      if (q && !p.id.toLowerCase().includes(q) && !(p.label || "").toLowerCase().includes(q)) continue;
+      const cat = p.category || "Other";
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(p);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [catalog, matrixSearch]);
+
+  if (loading) {
+    return <div className="h-48 rounded-xl bg-muted animate-pulse" />;
+  }
+
+  if (!catalog.length) {
+    return (
+      <div className="rounded-xl border border-border/50 p-12 text-center text-muted-foreground">
+        <LayoutGrid className="w-10 h-10 mx-auto mb-3 opacity-30" />
+        <p className="text-sm">No permission catalog loaded.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            value={matrixSearch}
+            onChange={e => setMatrixSearch(e.target.value)}
+            placeholder="Filter permissions…"
+            className="w-full h-9 pl-9 pr-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {catalog.length} permissions · {roles.length} roles
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-border/50 overflow-auto shadow-sm">
+        <table className="min-w-full text-xs">
+          <thead>
+            <tr className="bg-muted/40 border-b border-border">
+              <th className="text-left px-4 py-3 font-semibold text-muted-foreground sticky left-0 bg-muted/40 z-10 min-w-[220px]">Permission</th>
+              {roles.map(r => (
+                <th key={r.id} className="px-3 py-3 font-semibold text-center whitespace-nowrap">
+                  <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] ${colorForString(r.id, ROLE_COLORS)}`}>
+                    {r.isBuiltIn && <Lock className="w-2.5 h-2.5 opacity-60" />}
+                    {r.name}
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {categorized.map(([category, perms]) => (
+              <>
+                <tr key={`cat-${category}`} className="bg-slate-50/80 border-b border-border/50">
+                  <td colSpan={roles.length + 1} className="px-4 py-2 sticky left-0 bg-slate-50/80">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{category}</span>
+                    <span className="ml-2 text-[10px] text-muted-foreground/60">{perms.length}</span>
+                  </td>
+                </tr>
+                {perms.map(p => (
+                  <tr key={p.id} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
+                    <td className="px-4 py-2.5 sticky left-0 bg-white hover:bg-muted/20 transition-colors z-10">
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-medium text-foreground truncate">{p.label || p.id}</span>
+                            {p.highRisk && (
+                              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 shrink-0">
+                                <AlertTriangle className="w-2.5 h-2.5" /> HIGH RISK
+                              </span>
+                            )}
+                          </div>
+                          <p className="font-mono text-muted-foreground/60 truncate text-[10px]">{p.id}</p>
+                        </div>
+                      </div>
+                    </td>
+                    {roles.map(r => {
+                      const has = r.permissions.includes(p.id);
+                      return (
+                        <td key={r.id} className="px-3 py-2.5 text-center">
+                          {has ? (
+                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-600">
+                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 text-slate-300">
+                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
+                              </svg>
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main page ───────────────────────────────────────────────────── */
 
 export default function RolesPermissionsPage() {
@@ -247,7 +365,7 @@ export default function RolesPermissionsPage() {
   const [activeRoleId, setActiveRoleId] = useState<string | null>(null);
   const [draftPerms, setDraftPerms] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
-  const [tab, setTab] = useState<"roles" | "admins">("roles");
+  const [tab, setTab] = useState<"roles" | "admins" | "matrix">("roles");
   const [confirmRemoveRole, setConfirmRemoveRole] = useState(false);
   const [sensitiveDeleteRole, setSensitiveDeleteRole] = useState(false);
   const [sensitiveSavePerms, setSensitiveSavePerms] = useState(false);
@@ -574,6 +692,13 @@ export default function RolesPermissionsPage() {
           <Shield className="inline h-4 w-4 mr-1.5 -mt-0.5" />Roles
         </button>
         <button
+          onClick={() => setTab("matrix")}
+          data-testid="tab-matrix"
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === "matrix" ? "border-indigo-600 text-indigo-700" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+        >
+          <LayoutGrid className="inline h-4 w-4 mr-1.5 -mt-0.5" />Permission Matrix
+        </button>
+        <button
           onClick={() => setTab("admins")}
           data-testid="tab-admins"
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === "admins" ? "border-indigo-600 text-indigo-700" : "border-transparent text-muted-foreground hover:text-foreground"}`}
@@ -581,6 +706,11 @@ export default function RolesPermissionsPage() {
           <Users className="inline h-4 w-4 mr-1.5 -mt-0.5" />Admin assignments
         </button>
       </div>
+
+      {/* Matrix tab */}
+      {tab === "matrix" && (
+        <PermissionMatrix roles={roles} catalog={catalog} loading={loading} />
+      )}
 
       {/* Read-only banner */}
       {!canManage && (

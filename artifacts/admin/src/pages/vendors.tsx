@@ -1,12 +1,13 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   Store, Search, RefreshCw, Wallet, TrendingUp, ShoppingBag,
   CheckCircle2, XCircle, Ban, CircleDollarSign, CreditCard, Clock, ClipboardList,
   Package, Phone, ToggleLeft, ToggleRight, AlertTriangle, X, MessageCircle, Settings2,
   Download, CalendarDays, Percent, Truck, Gavel, ArrowUpDown, ArrowUp, ArrowDown,
+  Award, Star, Trophy, ChevronDown, Shield, FileCheck,
 } from "lucide-react";
 import { PageHeader, StatCard, FilterBar } from "@/components/shared";
 import { useLanguage } from "@/lib/useLanguage";
@@ -124,6 +125,102 @@ function CommissionModal({ vendor, defaultPct, onClose }: { vendor: any; default
             <Button variant="outline" className="flex-1 rounded-xl" onClick={onClose}>Cancel</Button>
             <Button onClick={handleSave} disabled={overrideMutation.isPending} className="flex-1 rounded-xl bg-orange-600 hover:bg-orange-700 text-white">
               {overrideMutation.isPending ? "Saving..." : "Save Override"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ── Vendor Tier helpers ── */
+const TIERS = [
+  { key: "bronze", label: "Bronze", icon: Award,  color: "text-amber-700 bg-amber-100 border-amber-200" },
+  { key: "silver", label: "Silver", icon: Star,   color: "text-slate-600 bg-slate-100 border-slate-200" },
+  { key: "gold",   label: "Gold",   icon: Trophy, color: "text-yellow-600 bg-yellow-100 border-yellow-200" },
+] as const;
+type VendorTier = "bronze" | "silver" | "gold";
+
+function TierBadge({ tier }: { tier?: VendorTier | null }) {
+  if (!tier) return null;
+  const t = TIERS.find(x => x.key === tier);
+  if (!t) return null;
+  const Icon = t.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${t.color}`}>
+      <Icon className="w-3 h-3" /> {t.label}
+    </span>
+  );
+}
+
+/* ── Vendor Verification Drawer ── */
+function VendorVerificationDrawer({ vendor, onClose }: { vendor: any; onClose: () => void }) {
+  const { toast } = useToast();
+  const statusMutation = useUpdateVendorStatus();
+  const [note, setNote] = useState("");
+
+  const handleApprove = () => {
+    statusMutation.mutate({ id: vendor.id, isActive: true, isBanned: false, banReason: null }, {
+      onSuccess: () => { toast({ title: "Vendor approved", description: `${vendor.storeName || vendor.name} is now active.` }); onClose(); },
+      onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+    });
+  };
+
+  const handleReject = () => {
+    if (!note.trim()) { toast({ title: "Rejection note required", variant: "destructive" }); return; }
+    statusMutation.mutate({ id: vendor.id, isActive: false, isBanned: false, banReason: note.trim() }, {
+      onSuccess: () => { toast({ title: "Vendor rejected", description: "Vendor has been notified." }); onClose(); },
+      onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+    });
+  };
+
+  return (
+    <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
+      <DialogContent className="w-[95vw] max-w-md rounded-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileCheck className="w-5 h-5 text-blue-600" /> Verify Vendor — {vendor.storeName || vendor.name}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 mt-1">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2 text-sm">
+            <div className="flex justify-between"><span className="text-muted-foreground">Store</span><span className="font-semibold">{vendor.storeName || "—"}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Owner</span><span className="font-semibold">{vendor.name || "—"}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Phone</span><span className="font-mono">{vendor.phone}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Category</span><span className="capitalize">{vendor.storeCategory || "General"}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Applied</span><span>{vendor.createdAt ? new Date(vendor.createdAt).toLocaleDateString() : "—"}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="capitalize font-medium text-amber-700">{vendor.approvalStatus || "pending"}</span></div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Note (required for rejection)</label>
+            <textarea
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              placeholder="e.g. Documents incomplete, or reason for rejection..."
+              rows={2}
+              className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1 rounded-xl" onClick={onClose} disabled={statusMutation.isPending}>
+              Cancel
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1 rounded-xl border-red-200 text-red-700 hover:bg-red-50"
+              onClick={handleReject}
+              disabled={statusMutation.isPending}
+            >
+              <XCircle className="w-4 h-4 mr-1.5" /> Reject
+            </Button>
+            <Button
+              className="flex-1 rounded-xl bg-green-600 hover:bg-green-700 text-white"
+              onClick={handleApprove}
+              disabled={statusMutation.isPending}
+            >
+              <CheckCircle2 className="w-4 h-4 mr-1.5" /> Approve
             </Button>
           </div>
         </div>
@@ -263,6 +360,59 @@ export default function Vendors() {
     return <StatusBadge status="offline" size="xs" label="Closed" />;
   };
 
+  const [verifyModal, setVerifyModal] = useState<any>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [tierUpdating, setTierUpdating] = useState<string | null>(null);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleBulkApprove = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+    for (const id of ids) {
+      try {
+        await fetcher(`/vendors/${id}/status`, { method: "PATCH", body: JSON.stringify({ isActive: true, isBanned: false }) });
+      } catch { /* continue */ }
+    }
+    toast({ title: `${ids.length} vendor(s) approved` });
+    setSelectedIds(new Set());
+    await qc.invalidateQueries({ queryKey: ["admin-vendors"] });
+  }, [selectedIds, toast, qc]);
+
+  const handleBulkSuspend = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+    for (const id of ids) {
+      try {
+        await fetcher(`/vendors/${id}/status`, { method: "PATCH", body: JSON.stringify({ isActive: false, isBanned: false }) });
+      } catch { /* continue */ }
+    }
+    toast({ title: `${ids.length} vendor(s) suspended` });
+    setSelectedIds(new Set());
+    await qc.invalidateQueries({ queryKey: ["admin-vendors"] });
+  }, [selectedIds, toast, qc]);
+
+  const handleBulkExport = useCallback(() => {
+    const selected = sortedFiltered.filter((v: any) => selectedIds.has(v.id));
+    exportVendorsCSV(selected);
+  }, [selectedIds, sortedFiltered]);
+
+  const handleTierChange = useCallback(async (vendorId: string, tier: VendorTier) => {
+    setTierUpdating(vendorId);
+    try {
+      await fetcher(`/vendors/${vendorId}`, { method: "PATCH", body: JSON.stringify({ tier }) });
+      await qc.invalidateQueries({ queryKey: ["admin-vendors"] });
+      toast({ title: "Tier updated", description: `Vendor tier set to ${tier}.` });
+    } catch (e: any) {
+      toast({ title: "Failed to update tier", description: e.message, variant: "destructive" });
+    }
+    setTierUpdating(null);
+  }, [qc, toast]);
+
   const [sortKey, setSortKey] = useState<"storeName" | "totalRevenue" | "walletBalance" | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -376,6 +526,27 @@ export default function Vendors() {
         </div>
       </Card>
 
+      {/* Bulk Actions Bar */}
+      {selectedIds.size > 0 && (
+        <div className="sticky top-0 z-20 bg-indigo-600 text-white rounded-2xl px-4 py-3 flex items-center justify-between shadow-lg">
+          <span className="text-sm font-semibold">{selectedIds.size} vendor{selectedIds.size > 1 ? "s" : ""} selected</span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" className="h-8 text-xs" onClick={handleBulkApprove}>
+              <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve All
+            </Button>
+            <Button size="sm" variant="secondary" className="h-8 text-xs" onClick={handleBulkSuspend}>
+              <Ban className="w-3.5 h-3.5 mr-1" /> Suspend All
+            </Button>
+            <Button size="sm" variant="secondary" className="h-8 text-xs" onClick={handleBulkExport}>
+              <Download className="w-3.5 h-3.5 mr-1" /> Export
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8 text-white hover:bg-white/20 text-xs" onClick={() => setSelectedIds(new Set())}>
+              <X className="w-3.5 h-3.5" /> Clear
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Vendors Table/Cards */}
       {isLoading ? (
         <div className="space-y-3">
@@ -391,11 +562,18 @@ export default function Vendors() {
       ) : (
         <div className="space-y-3">
           {sortedFiltered.map((v: any) => (
-            <Card key={v.id} className="rounded-2xl border-border/50 shadow-sm hover:shadow-md transition-shadow">
+            <Card key={v.id} className={`rounded-2xl border-border/50 shadow-sm hover:shadow-md transition-shadow ${selectedIds.has(v.id) ? "ring-2 ring-indigo-500 border-indigo-300" : ""}`}>
               <CardContent className="p-4 sm:p-5">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                  {/* Store Info */}
+                  {/* Checkbox + Store Info */}
                   <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(v.id)}
+                      onChange={() => toggleSelect(v.id)}
+                      className="w-4 h-4 rounded accent-indigo-600 shrink-0 cursor-pointer"
+                      onClick={e => e.stopPropagation()}
+                    />
                     <div className="w-12 h-12 rounded-2xl bg-orange-100 flex items-center justify-center shrink-0 text-2xl">
                       🏪
                     </div>
@@ -403,6 +581,7 @@ export default function Vendors() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-bold text-sm text-foreground truncate">{v.storeName || "Unnamed Store"}</p>
                         {getStatusBadge(v)}
+                        <TierBadge tier={v.tier} />
                         {(deliveryMode === "stores" || deliveryMode === "both") && (
                           whitelistedVendorIds.has(v.id)
                             ? <Badge
@@ -480,6 +659,26 @@ export default function Vendors() {
 
                   {/* Actions */}
                   <div className="flex gap-2 shrink-0 flex-wrap">
+                    {v.approvalStatus === "pending" && (
+                      <Button size="sm" variant="outline" onClick={() => setVerifyModal(v)} disabled={!canWrite}
+                        className="h-9 rounded-xl gap-1.5 text-xs border-blue-200 text-blue-700 hover:bg-blue-50">
+                        <FileCheck className="w-3.5 h-3.5" /> Verify
+                      </Button>
+                    )}
+                    {/* Tier selector */}
+                    <div className="relative">
+                      <select
+                        value={v.tier || ""}
+                        onChange={e => { if (e.target.value) handleTierChange(v.id, e.target.value as VendorTier); }}
+                        disabled={tierUpdating === v.id || !canWrite}
+                        className="h-9 pl-2 pr-6 text-xs rounded-xl border border-amber-200 bg-amber-50 text-amber-700 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:opacity-50"
+                        title="Set vendor tier"
+                      >
+                        <option value="">No Tier</option>
+                        {TIERS.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                      </select>
+                      <Award className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-amber-600 pointer-events-none" />
+                    </div>
                     <Button size="sm" variant="outline" onClick={() => setCommModal(v)} disabled={!canWrite}
                       className="h-9 rounded-xl gap-1.5 text-xs border-purple-200 text-purple-700 hover:bg-purple-50">
                       <Percent className="w-3.5 h-3.5" /> Commission
@@ -530,6 +729,7 @@ export default function Vendors() {
       {walletModal  && <WalletAdjustModal mode="vendor" subject={walletModal} onClose={() => setWalletModal(null)} />}
       {suspendModal && <SuspendModal vendor={suspendModal} onClose={() => setSuspendModal(null)} />}
       {commModal    && <CommissionModal vendor={commModal} defaultPct={vendorCommissionPct} onClose={() => setCommModal(null)} />}
+      {verifyModal  && <VendorVerificationDrawer vendor={verifyModal} onClose={() => setVerifyModal(null)} />}
 
       {/* Invite Vendor Dialog (triggered by N shortcut) */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>

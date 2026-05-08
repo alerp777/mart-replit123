@@ -705,7 +705,22 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
     setBlockedServices(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
   };
 
+  const [pendingRoleChange, setPendingRoleChange] = useState(false);
+
+  const rolesChanged = useMemo(() => {
+    const origRoles = (user.roles || user.role || "customer").split(",").map((r: string) => r.trim()).filter(Boolean).sort();
+    return roles.slice().sort().join(",") !== origRoles.join(",");
+  }, [roles, user]);
+
   const handleSave = () => {
+    if (rolesChanged) {
+      setPendingRoleChange(true);
+    } else {
+      performSaveUser();
+    }
+  };
+
+  const performSaveUser = () => {
     const newRoles = roles.length > 0 ? roles : ["customer"];
     securityMutation.mutate({
       isActive,
@@ -716,9 +731,11 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
       securityNote,
       notify: isBanned && !user.isBanned,
     });
+    setPendingRoleChange(false);
   };
 
   return (
+    <>
     <MobileDrawer
       open
       onClose={onClose}
@@ -1227,6 +1244,18 @@ function SecurityModal({ user, onClose }: { user: any; onClose: () => void }) {
           </div>
         </div>
     </MobileDrawer>
+
+    <SensitiveActionDialog
+      open={pendingRoleChange}
+      onClose={() => setPendingRoleChange(false)}
+      onConfirm={performSaveUser}
+      title="Confirm Role Change"
+      description={`You are changing roles for "${user.name || user.phone}". Role changes affect access permissions. Please verify your identity to proceed.`}
+      confirmLabel="Confirm Role Change"
+      actionType="change_user_role"
+      targetId={user.id}
+    />
+    </>
   );
 }
 

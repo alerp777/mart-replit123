@@ -1,6 +1,9 @@
-import { ShoppingBag, User, Package, Phone, CheckCircle2, AlertTriangle, Receipt } from "lucide-react";
+import { useState } from "react";
+import { ShoppingBag, User, Package, Phone, CheckCircle2, AlertTriangle, Receipt, RotateCcw, Flag } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { MobileDrawer } from "@/components/MobileDrawer";
 import { StatusBadge } from "@/components/AdminShared";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/format";
@@ -9,6 +12,163 @@ import { CancelConfirmDialog } from "./CancelConfirmDialog";
 import { RefundConfirmDialog } from "./RefundConfirmDialog";
 import { RiderAssignPanel } from "./RiderAssignPanel";
 import { STATUS_LABELS, allowedNext, isTerminal, canCancel } from "./constants";
+import { fetcher } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+
+/* ── Return Request Panel ── */
+function ReturnPanel({ order }: { order: any }) {
+  const { toast } = useToast();
+  const [reason, setReason] = useState("");
+  const [amount, setAmount] = useState(String(order.total ?? ""));
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!reason.trim()) { toast({ title: "Reason required", variant: "destructive" }); return; }
+    setSubmitting(true);
+    try {
+      await fetcher(`/orders/${order.id}/return`, { method: "POST", body: JSON.stringify({ reason: reason.trim(), amount: parseFloat(amount) || order.total }) });
+      toast({ title: "Return request submitted", description: "Admin team will review and process the refund." });
+      setSubmitted(true);
+    } catch (e: any) {
+      toast({ title: "Failed", description: e.message, variant: "destructive" });
+    }
+    setSubmitting(false);
+  };
+
+  if (submitted) {
+    return (
+      <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl p-4">
+        <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
+        <div>
+          <p className="text-sm font-semibold text-green-800">Return submitted</p>
+          <p className="text-xs text-green-600">Team will process the refund within 24–48 hrs.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
+        <p className="font-semibold text-amber-800">Order #{order.id?.slice(-8).toUpperCase()}</p>
+        <p className="text-amber-700 mt-0.5">Total: <strong>{formatCurrency(order.total)}</strong> · {order.paymentMethod === "wallet" ? "Wallet" : "Cash"}</p>
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Return Reason *</label>
+        <textarea
+          value={reason}
+          onChange={e => setReason(e.target.value)}
+          placeholder="Describe why the return is needed (damaged item, wrong product, etc.)"
+          rows={3}
+          className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Refund Amount (Rs.)</label>
+        <Input
+          type="number"
+          value={amount}
+          onChange={e => setAmount(e.target.value)}
+          min="1"
+          max={order.total}
+          step="1"
+          className="h-10 rounded-xl"
+          placeholder="Partial or full refund"
+        />
+        <p className="text-xs text-muted-foreground">Max: {formatCurrency(order.total)}</p>
+      </div>
+      <Button
+        onClick={handleSubmit}
+        disabled={submitting}
+        className="w-full h-10 rounded-xl bg-amber-600 hover:bg-amber-700 text-white gap-2"
+      >
+        <RotateCcw className="w-4 h-4" />
+        {submitting ? "Submitting…" : "Submit Return Request"}
+      </Button>
+    </div>
+  );
+}
+
+/* ── Dispute Panel ── */
+function DisputePanel({ order }: { order: any }) {
+  const { toast } = useToast();
+  const [note, setNote] = useState("");
+  const [type, setType] = useState("wrong_item");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!note.trim()) { toast({ title: "Details required", variant: "destructive" }); return; }
+    setSubmitting(true);
+    try {
+      await fetcher(`/orders/${order.id}/dispute`, { method: "POST", body: JSON.stringify({ type, note: note.trim() }) });
+      toast({ title: "Dispute filed", description: "Order flagged for admin review." });
+      setSubmitted(true);
+    } catch (e: any) {
+      toast({ title: "Failed", description: e.message, variant: "destructive" });
+    }
+    setSubmitting(false);
+  };
+
+  const DISPUTE_TYPES = [
+    { value: "wrong_item", label: "Wrong item delivered" },
+    { value: "not_delivered", label: "Not delivered" },
+    { value: "damaged", label: "Item damaged" },
+    { value: "overcharged", label: "Overcharged" },
+    { value: "fraud", label: "Suspected fraud" },
+    { value: "other", label: "Other" },
+  ];
+
+  if (submitted) {
+    return (
+      <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
+        <Flag className="w-5 h-5 text-red-600 shrink-0" />
+        <div>
+          <p className="text-sm font-semibold text-red-800">Dispute filed</p>
+          <p className="text-xs text-red-600">Order flagged for investigation. You'll be notified of the outcome.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm">
+        <p className="font-semibold text-red-800">File a dispute for Order #{order.id?.slice(-8).toUpperCase()}</p>
+        <p className="text-red-700 mt-0.5">Disputes are reviewed by the admin team within 24 hrs.</p>
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Dispute Type</label>
+        <select
+          value={type}
+          onChange={e => setType(e.target.value)}
+          className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm"
+        >
+          {DISPUTE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Details *</label>
+        <textarea
+          value={note}
+          onChange={e => setNote(e.target.value)}
+          placeholder="Provide full context — what happened, what was expected, any evidence..."
+          rows={4}
+          className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+      </div>
+      <Button
+        onClick={handleSubmit}
+        disabled={submitting}
+        className="w-full h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white gap-2"
+      >
+        <Flag className="w-4 h-4" />
+        {submitting ? "Filing…" : "File Dispute"}
+      </Button>
+    </div>
+  );
+}
 
 interface OrderDetailDrawerProps {
   selectedOrder: any;
@@ -42,15 +202,38 @@ export function OrderDetailDrawer({
   refundPending, showAssignRider, setShowAssignRider, riderSearch, setRiderSearch, ridersData,
   onAssignRider, assignPending, onUpdateStatus, onDeliverConfirm,
 }: OrderDetailDrawerProps) {
+  const [activeTab, setActiveTab] = useState<"details" | "return" | "dispute">("details");
+
   return (
     <MobileDrawer
       open={!!selectedOrder}
-      onClose={onClose}
+      onClose={() => { setActiveTab("details"); onClose(); }}
       title={<><ShoppingBag className="w-5 h-5 text-indigo-600" aria-hidden="true" /> Order Detail {selectedOrder && <StatusBadge status={selectedOrder.status} />}</>}
       dialogClassName="w-[95vw] max-w-lg rounded-3xl max-h-[90vh] overflow-y-auto"
     >
       {selectedOrder && (
         <div className="space-y-4 mt-2">
+          {/* Tab navigation */}
+          <div className="border-b flex gap-1 -mx-1">
+            {([
+              { key: "details" as const,  label: "Details",         icon: ShoppingBag },
+              { key: "return"  as const,  label: "Return Request",  icon: RotateCcw },
+              { key: "dispute" as const,  label: "Dispute",         icon: Flag },
+            ] as const).map(t => (
+              <button
+                key={t.key}
+                onClick={() => setActiveTab(t.key)}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${activeTab === t.key ? "border-indigo-600 text-indigo-700" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              >
+                <t.icon className="w-3.5 h-3.5" />
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === "return" && <ReturnPanel order={selectedOrder} />}
+          {activeTab === "dispute" && <DisputePanel order={selectedOrder} />}
+          {activeTab === "details" && <>
 
           {showCancelConfirm && (
             <CancelConfirmDialog
@@ -252,6 +435,7 @@ export function OrderDetailDrawer({
             <span>Ordered: {formatDate(selectedOrder.createdAt)}</span>
             <span>Updated: {formatDate(selectedOrder.updatedAt)}</span>
           </footer>
+          </>}
         </div>
       )}
     </MobileDrawer>

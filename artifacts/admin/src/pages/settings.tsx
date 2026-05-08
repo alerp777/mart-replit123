@@ -393,10 +393,25 @@ export default function SettingsPage() {
   };
   const handleToggle = (key: string, val: boolean) => handleChange(key, val ? "on" : "off");
 
-  const handleSave = async () => {
+  const [showDiffPreview, setShowDiffPreview] = useState(false);
+  const [pendingDiff, setPendingDiff] = useState<Array<{ key: string; oldValue: string; newValue: string }>>([]);
+
+  const handleSave = () => {
+    const diff = Array.from(dirtyKeys).map(key => ({
+      key,
+      oldValue: savedValues[key] ?? "",
+      newValue: localValues[key] ?? "",
+    }));
+    if (diff.length === 0) return;
+    setPendingDiff(diff);
+    setShowDiffPreview(true);
+  };
+
+  const performSave = async () => {
+    setShowDiffPreview(false);
     setSaving(true);
     try {
-      const changed = Array.from(dirtyKeys).map(key => ({ key, value: localValues[key] ?? "" }));
+      const changed = pendingDiff.map(d => ({ key: d.key, value: d.newValue }));
       await fetcher("/platform-settings", { method: "PUT", body: JSON.stringify({ settings: changed }) });
       setSavedValues(prev => {
         const updated = { ...prev };
@@ -409,6 +424,7 @@ export default function SettingsPage() {
       toast({ title: "Save failed", description: e.message, variant: "destructive" });
     }
     setSaving(false);
+    setPendingDiff([]);
   };
 
   const [backingUp, setBackingUp] = useState(false);
@@ -1079,6 +1095,43 @@ export default function SettingsPage() {
         variant="destructive"
         busy={restoring}
       />
+
+      {/* ── Settings Diff Preview Modal ── */}
+      {showDiffPreview && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowDiffPreview(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-border flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center">
+                <Save className="w-5 h-5 text-amber-700" />
+              </div>
+              <div>
+                <h2 className="font-bold text-foreground">Review changes before saving</h2>
+                <p className="text-xs text-muted-foreground">{pendingDiff.length} setting{pendingDiff.length !== 1 ? "s" : ""} will be updated and applied immediately.</p>
+              </div>
+            </div>
+            <div className="max-h-80 overflow-y-auto divide-y divide-border">
+              {pendingDiff.map(d => (
+                <div key={d.key} className="px-5 py-3">
+                  <p className="text-xs font-semibold text-foreground font-mono">{d.key}</p>
+                  <div className="mt-1 flex items-center gap-2 text-xs">
+                    <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded font-mono line-through max-w-[160px] truncate">{d.oldValue || "(empty)"}</span>
+                    <span className="text-muted-foreground shrink-0">→</span>
+                    <span className="px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded font-mono max-w-[160px] truncate">{d.newValue || "(empty)"}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="px-5 py-4 border-t border-border flex justify-end gap-3 bg-muted/30">
+              <Button variant="outline" className="h-9 rounded-xl" onClick={() => setShowDiffPreview(false)}>
+                Cancel
+              </Button>
+              <Button className="h-9 rounded-xl" onClick={() => { void performSave(); }} disabled={saving}>
+                {saving ? "Saving…" : `Apply ${pendingDiff.length} change${pendingDiff.length !== 1 ? "s" : ""}`}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,10 +1,11 @@
-import { useCallback, useState, useId, useEffect } from "react";
+import { useCallback, useState, useId, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader, StatCard } from "@/components/shared";
-import { Users, ShoppingBag, Car, Pill, Box, Settings, TrendingUp, ArrowRight, Wallet, Download, Trophy, Star, AlertTriangle, DollarSign, LayoutDashboard, Loader2, X, Zap, UserCheck, Search } from "lucide-react";
+import { Users, ShoppingBag, Car, Pill, Box, Settings, TrendingUp, ArrowRight, Wallet, Download, Trophy, Star, AlertTriangle, DollarSign, LayoutDashboard, Loader2, X, Zap, UserCheck, Search, Radio, Bell, BellOff } from "lucide-react";
 import { ActivityFeed } from "@/components/ui/ActivityFeed";
 import { Link } from "wouter";
-import { useStats, useRevenueTrend, useLeaderboard, useRides, useRiders, useAdminReassignRide, useBroadcast } from "@/hooks/use-admin";
+import { useStats, useRevenueTrend, useLeaderboard, useRides, useRiders, useAdminReassignRide, useBroadcast, usePlatformSettings } from "@/hooks/use-admin";
+import { useActivityFeed } from "@/hooks/useActivityFeed";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -81,6 +82,100 @@ function updatedAgo(ts: number): string {
   const h = Math.floor(m / 60);
   if (h < 24)    return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
+}
+
+/* ── Live Metrics Strip ── */
+const EVENT_LABELS: Record<string, { label: string; color: string }> = {
+  "order:new":    { label: "New Order",    color: "bg-green-100 text-green-700 border-green-200" },
+  "order:update": { label: "Order Update", color: "bg-blue-100 text-blue-700 border-blue-200" },
+  "rider:sos":    { label: "Rider SOS",    color: "bg-red-100 text-red-700 border-red-200" },
+  "ride:new":     { label: "New Ride",     color: "bg-violet-100 text-violet-700 border-violet-200" },
+  "ride:update":  { label: "Ride Update",  color: "bg-indigo-100 text-indigo-700 border-indigo-200" },
+};
+
+function LiveMetricsStrip() {
+  const { events, connected, clear } = useActivityFeed();
+  const { data: settingsData } = usePlatformSettings();
+  const settings = (settingsData?.settings ?? []) as Array<{ key: string; value: string }>;
+  const getSetting = (key: string) => settings.find(s => s.key === key)?.value ?? "";
+
+  const sosThreshold  = parseInt(getSetting("dashboard_sos_threshold")  || "3",  10);
+  const pendThreshold = parseInt(getSetting("dashboard_pending_threshold") || "30", 10);
+
+  const sosCnt  = events.filter(e => e.event === "rider:sos").length;
+  const newOrd  = events.filter(e => e.event === "order:new").length;
+
+  const last = events.slice(0, 6);
+
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-[1fr_auto] gap-4">
+      {/* Live events ticker */}
+      <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-border/30 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${connected ? "bg-green-500 animate-pulse" : "bg-slate-300"}`} />
+            <span className="text-sm font-bold">Live Events</span>
+            {!connected && <span className="text-xs text-muted-foreground">(connecting…)</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">{events.length} event{events.length !== 1 ? "s" : ""}</span>
+            {events.length > 0 && (
+              <button onClick={clear} className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+                <X className="w-3 h-3" /> Clear
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="px-3 py-2 flex gap-2 flex-wrap min-h-[46px] items-center">
+          {last.length === 0 ? (
+            <span className="text-xs text-muted-foreground">Waiting for events…</span>
+          ) : last.map((ev: any, i: number) => {
+            const meta = EVENT_LABELS[ev.event] ?? { label: ev.event, color: "bg-slate-100 text-slate-600 border-slate-200" };
+            return (
+              <span key={i} className={`inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full border ${meta.color}`}>
+                <Radio className="w-2.5 h-2.5" />
+                {meta.label}
+                {ev.data?.id ? <span className="opacity-60 text-[10px] font-mono">#{String(ev.data.id).slice(-4)}</span> : null}
+              </span>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* Alert threshold indicators */}
+      <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden min-w-[200px]">
+        <div className="px-4 py-3 border-b border-border/30">
+          <span className="text-sm font-bold">Alert Thresholds</span>
+        </div>
+        <div className="px-4 py-3 space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-xs">
+              {sosCnt >= sosThreshold
+                ? <Bell className="w-3.5 h-3.5 text-red-500 animate-pulse" />
+                : <BellOff className="w-3.5 h-3.5 text-muted-foreground" />
+              }
+              <span className="text-muted-foreground">SOS Events</span>
+            </div>
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${sosCnt >= sosThreshold ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600"}`}>
+              {sosCnt} / {sosThreshold}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-xs">
+              {newOrd >= pendThreshold
+                ? <Bell className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                : <BellOff className="w-3.5 h-3.5 text-muted-foreground" />
+              }
+              <span className="text-muted-foreground">New Orders</span>
+            </div>
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${newOrd >= pendThreshold ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
+              {newOrd} / {pendThreshold}
+            </span>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
 }
 
 const SERVICE_SERIES = [
@@ -272,6 +367,9 @@ export default function Dashboard() {
           </div>
         }
       />
+
+      {/* ── Live Metrics Strip ── */}
+      <LiveMetricsStrip />
 
       {/* 4 Hero Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

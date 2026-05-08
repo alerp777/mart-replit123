@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PageHeader } from "@/components/shared";
-import { PackageSearch, Plus, Search, Edit, Trash2, ToggleLeft, ToggleRight, Download, Filter, CheckCircle, XCircle, Clock, Upload, X, ImageIcon, ArrowUpDown, ArrowUp, ArrowDown, History } from "lucide-react";
+import { PackageSearch, Plus, Search, Edit, Trash2, ToggleLeft, ToggleRight, Download, Filter, CheckCircle, XCircle, Clock, Upload, X, ImageIcon, ArrowUpDown, ArrowUp, ArrowDown, History, Tag, Percent, ChevronDown } from "lucide-react";
+import { fetcher } from "@/lib/api";
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, usePendingProducts, useApproveProduct, useRejectProduct, useCategories, useProductStockHistory } from "@/hooks/use-admin";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -283,7 +284,54 @@ export default function Products() {
   const canWrite = useHasPermission("content.products.edit");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [tab, setTab] = useState<"all" | "pending">("all");
+  const [tab, setTab] = useState<"all" | "pending" | "pricing">("all");
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [bulkPrice, setBulkPrice] = useState("");
+  const [bulkCategory, setBulkCategory] = useState("");
+  const [bulkStock, setBulkStock] = useState<"" | "in" | "out">("");
+  const [bulkApplying, setBulkApplying] = useState(false);
+
+  const [pricingRules, setPricingRules] = useState([
+    { id: "1", name: "Weekend Sale", type: "discount_pct", value: "10", category: "all", active: true },
+    { id: "2", name: "Bulk Discount (5+ items)", type: "discount_flat", value: "50", category: "mart", active: false },
+  ]);
+
+  const toggleProductSelect = useCallback((id: string) => {
+    setSelectedProductIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleBulkEdit = useCallback(async () => {
+    if (!bulkPrice && !bulkCategory && !bulkStock) {
+      toast({ title: "Select at least one field to change", variant: "destructive" });
+      return;
+    }
+    setBulkApplying(true);
+    const ids = Array.from(selectedProductIds);
+    const payload: Record<string, any> = {};
+    if (bulkPrice) payload.price = parseFloat(bulkPrice);
+    if (bulkCategory) payload.category = bulkCategory;
+    if (bulkStock === "in") payload.inStock = true;
+    if (bulkStock === "out") payload.inStock = false;
+    let succeeded = 0;
+    for (const id of ids) {
+      try {
+        await fetcher(`/products/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+        succeeded++;
+      } catch { /* continue */ }
+    }
+    toast({ title: `Bulk edit applied`, description: `${succeeded} of ${ids.length} products updated.` });
+    setSelectedProductIds(new Set());
+    setShowBulkEdit(false);
+    setBulkPrice("");
+    setBulkCategory("");
+    setBulkStock("");
+    setBulkApplying(false);
+  }, [selectedProductIds, bulkPrice, bulkCategory, bulkStock, toast]);
   const [search, setSearch]         = useState("");
   const [typeFilter, setTypeFilter]   = useState("all");
   const [vendorFilter, setVendorFilter] = useState("");
@@ -520,7 +568,119 @@ export default function Products() {
             <span className="bg-amber-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{pendingCount}</span>
           )}
         </button>
+        <button
+          onClick={() => setTab("pricing")}
+          className={`px-5 py-2.5 text-sm font-bold rounded-t-xl border-b-2 transition-colors flex items-center gap-2 ${
+            tab === "pricing" ? "border-purple-500 text-purple-700 bg-purple-50" : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Tag className="w-4 h-4" />
+          Pricing Rules
+        </button>
       </div>
+
+      {/* Pricing Rules Tab */}
+      {tab === "pricing" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Define global pricing rules that apply across products. Rules are applied at checkout.</p>
+            <Button size="sm" className="h-9 rounded-xl gap-2" onClick={() => {
+              const newRule = { id: String(Date.now()), name: "New Rule", type: "discount_pct", value: "5", category: "all", active: false };
+              setPricingRules(prev => [...prev, newRule]);
+            }}>
+              <Plus className="w-4 h-4" /> Add Rule
+            </Button>
+          </div>
+          <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30">
+                  <TableHead className="font-bold">Rule Name</TableHead>
+                  <TableHead className="font-bold">Type</TableHead>
+                  <TableHead className="font-bold">Value</TableHead>
+                  <TableHead className="font-bold">Category</TableHead>
+                  <TableHead className="font-bold text-center">Active</TableHead>
+                  <TableHead className="font-bold text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pricingRules.map(rule => (
+                  <TableRow key={rule.id}>
+                    <TableCell>
+                      <input
+                        value={rule.name}
+                        onChange={e => setPricingRules(prev => prev.map(r => r.id === rule.id ? { ...r, name: e.target.value } : r))}
+                        className="w-full text-sm bg-transparent border border-transparent hover:border-border focus:border-primary rounded-lg px-2 py-1 focus:outline-none"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <select
+                        value={rule.type}
+                        onChange={e => setPricingRules(prev => prev.map(r => r.id === rule.id ? { ...r, type: e.target.value } : r))}
+                        className="text-xs rounded-lg border border-border bg-background px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-ring"
+                      >
+                        <option value="discount_pct">% Discount</option>
+                        <option value="discount_flat">Flat Discount (PKR)</option>
+                        <option value="markup_pct">% Markup</option>
+                        <option value="markup_flat">Flat Markup (PKR)</option>
+                      </select>
+                    </TableCell>
+                    <TableCell>
+                      <input
+                        type="number"
+                        value={rule.value}
+                        onChange={e => setPricingRules(prev => prev.map(r => r.id === rule.id ? { ...r, value: e.target.value } : r))}
+                        className="w-20 text-sm bg-transparent border border-border rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <select
+                        value={rule.category}
+                        onChange={e => setPricingRules(prev => prev.map(r => r.id === rule.id ? { ...r, category: e.target.value } : r))}
+                        className="text-xs rounded-lg border border-border bg-background px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-ring"
+                      >
+                        <option value="all">All Categories</option>
+                        <option value="mart">Mart</option>
+                        <option value="food">Food</option>
+                        <option value="pharmacy">Pharmacy</option>
+                      </select>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <button
+                        onClick={() => setPricingRules(prev => prev.map(r => r.id === rule.id ? { ...r, active: !r.active } : r))}
+                        className={`w-10 h-5 rounded-full relative transition-colors ${rule.active ? "bg-green-500" : "bg-slate-200"}`}
+                      >
+                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${rule.active ? "translate-x-5" : "translate-x-0.5"}`} />
+                      </button>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-red-600 hover:bg-red-50"
+                        onClick={() => setPricingRules(prev => prev.filter(r => r.id !== rule.id))}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {pricingRules.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground text-sm">No pricing rules. Click "Add Rule" to create one.</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </Card>
+          {pricingRules.some(r => r.active) && (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-xs text-green-700 flex items-center gap-2">
+              <Percent className="w-4 h-4 shrink-0" />
+              <span>{pricingRules.filter(r => r.active).length} active rule{pricingRules.filter(r => r.active).length !== 1 ? "s" : ""} will apply at checkout. Rules are applied in order from top to bottom.</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Add/Edit Dialog */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
@@ -972,12 +1132,38 @@ export default function Products() {
             ))}
           </div>
 
+          {/* Bulk Actions Bar */}
+          {selectedProductIds.size > 0 && (
+            <div className="sticky top-0 z-20 bg-violet-600 text-white rounded-2xl px-4 py-3 flex items-center justify-between shadow-lg">
+              <span className="text-sm font-semibold">{selectedProductIds.size} product{selectedProductIds.size > 1 ? "s" : ""} selected</span>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="secondary" className="h-8 text-xs" onClick={() => setShowBulkEdit(true)} disabled={!canWrite}>
+                  <Edit className="w-3.5 h-3.5 mr-1" /> Bulk Edit
+                </Button>
+                <Button size="sm" variant="ghost" className="h-8 text-white hover:bg-white/20 text-xs" onClick={() => setSelectedProductIds(new Set())}>
+                  <X className="w-3.5 h-3.5" /> Clear
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Desktop table */}
           <Card className="hidden md:block rounded-2xl border-border/50 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <Table className="min-w-[600px]">
                 <TableHeader className="bg-muted/50">
                   <TableRow>
+                    <TableHead className="w-10">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 rounded accent-violet-600"
+                        checked={filtered.length > 0 && filtered.every((p: ProductRow) => selectedProductIds.has(p.id))}
+                        onChange={e => {
+                          if (e.target.checked) setSelectedProductIds(new Set(filtered.map((p: ProductRow) => p.id)));
+                          else setSelectedProductIds(new Set());
+                        }}
+                      />
+                    </TableHead>
                     {([
                       { key: "name",     label: T("product") },
                       { key: "category", label: T("category") },
@@ -1001,12 +1187,21 @@ export default function Products() {
                 </TableHeader>
                 <TableBody>
                   {isLoading ? (
-                    <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">Loading products...</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">Loading products...</TableCell></TableRow>
                   ) : filtered.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No products found.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">No products found.</TableCell></TableRow>
                   ) : (
                     filtered.map((p: ProductRow) => (
-                      <TableRow key={p.id} className="hover:bg-muted/30">
+                      <TableRow key={p.id} className={`hover:bg-muted/30 ${selectedProductIds.has(p.id) ? "bg-violet-50/60" : ""}`}>
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 rounded accent-violet-600 cursor-pointer"
+                            checked={selectedProductIds.has(p.id)}
+                            onChange={() => toggleProductSelect(p.id)}
+                            onClick={e => e.stopPropagation()}
+                          />
+                        </TableCell>
                         <TableCell>
                           <p className="font-semibold text-foreground">{p.name}</p>
                           <div className="flex items-center gap-2 mt-1">
@@ -1083,6 +1278,66 @@ export default function Products() {
         vendors={vendors}
         onClose={() => setStockHistoryProduct(null)}
       />
+    )}
+
+    {/* Bulk Edit Dialog */}
+    {showBulkEdit && (
+      <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowBulkEdit(false)}>
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="px-5 py-4 border-b border-border flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-violet-100 flex items-center justify-center">
+              <Edit className="w-5 h-5 text-violet-700" />
+            </div>
+            <div>
+              <h2 className="font-bold text-foreground">Bulk Edit Products</h2>
+              <p className="text-xs text-muted-foreground">{selectedProductIds.size} product{selectedProductIds.size !== 1 ? "s" : ""} will be updated</p>
+            </div>
+          </div>
+          <div className="px-5 py-4 space-y-4">
+            <p className="text-xs text-muted-foreground">Leave any field blank to keep existing values unchanged.</p>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">New Price (Rs.)</label>
+              <Input
+                type="number"
+                min="1"
+                max="1000000"
+                step="0.01"
+                value={bulkPrice}
+                onChange={e => setBulkPrice(e.target.value)}
+                placeholder="Leave blank to keep current price"
+                className="h-10 rounded-xl"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Category</label>
+              <Input
+                value={bulkCategory}
+                onChange={e => setBulkCategory(e.target.value)}
+                placeholder="Leave blank to keep current category"
+                className="h-10 rounded-xl"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Stock Status</label>
+              <select
+                value={bulkStock}
+                onChange={e => setBulkStock(e.target.value as "" | "in" | "out")}
+                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">No change</option>
+                <option value="in">Mark all In Stock</option>
+                <option value="out">Mark all Out of Stock</option>
+              </select>
+            </div>
+          </div>
+          <div className="px-5 py-4 border-t border-border flex justify-end gap-3 bg-muted/30">
+            <Button variant="outline" className="h-9 rounded-xl" onClick={() => setShowBulkEdit(false)}>Cancel</Button>
+            <Button className="h-9 rounded-xl" onClick={handleBulkEdit} disabled={bulkApplying}>
+              {bulkApplying ? "Applying…" : `Apply to ${selectedProductIds.size} products`}
+            </Button>
+          </div>
+        </div>
+      </div>
     )}
     </>
   );
