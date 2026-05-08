@@ -8,6 +8,7 @@ import {
 import { PageHeader } from "@/components/shared";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
 import { useToast } from "@/hooks/use-toast";
+import { useErrorHandler } from "@/hooks/useErrorHandler";
 import { fetcher } from "@/lib/api";
 import { getAdminTiming } from "@/lib/adminTiming";
 import { Card, CardContent } from "@/components/ui/card";
@@ -62,6 +63,7 @@ export default function CategoriesPage() {
   const T = (key: TranslationKey) => tDual(key, language);
   const { toast } = useToast();
   const qc = useQueryClient();
+  const { onError: onCategoryError } = useErrorHandler({ title: "Error" });
 
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [editing, setEditing] = useState<Category | null>(null);
@@ -109,8 +111,6 @@ export default function CategoriesPage() {
     sortOrder: number;
     isActive: boolean;
   };
-  const errMsg = (e: unknown): string =>
-    e instanceof Error ? e.message : typeof e === "string" ? e : "Unknown error";
   const saveMutation = useMutation({
     mutationFn: async (body: SaveCategoryBody) => {
       if (editing) return fetcher(`/categories/${editing.id}`, { method: "PATCH", body: JSON.stringify(body) });
@@ -123,7 +123,7 @@ export default function CategoriesPage() {
       setForm({ ...EMPTY_FORM });
       toast({ title: editing ? "Category updated" : "Category created" });
     },
-    onError: (e: unknown) => toast({ title: "Error", description: errMsg(e), variant: "destructive" }),
+    onError: onCategoryError,
   });
 
   const deleteMutation = useMutation({

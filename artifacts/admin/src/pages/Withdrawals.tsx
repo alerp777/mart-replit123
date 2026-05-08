@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useErrorHandler } from "@/hooks/useErrorHandler";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { formatCurrency } from "@/lib/format";
@@ -85,13 +86,14 @@ function ApproveModal({ w, onClose }: { w: Withdrawal; onClose: () => void }) {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const approve = useApproveWithdrawal();
+  const { onError: onApproveError } = useErrorHandler({ title: "Error" });
   const parsed = parseDesc(w.description || "");
 
   const handleApprove = () => {
     if (!refNo.trim()) { toast({ title: "Reference number required", variant: "destructive" }); return; }
     approve.mutate({ id: w.id, refNo: refNo.trim(), note: note.trim() || undefined }, {
       onSuccess: () => { toast({ title: "Withdrawal approved", description: `${fc(Number(w.amount))} marked as paid — Ref: ${refNo}` }); onClose(); },
-      onError:   (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+      onError: onApproveError,
     });
   };
 
@@ -147,6 +149,7 @@ function RejectModal({ w, onClose }: { w: Withdrawal; onClose: () => void }) {
   const { language } = useLanguage();
   const T = (key: TranslationKey) => tDual(key, language);
   const reject = useRejectWithdrawal();
+  const { onError: onRejectError } = useErrorHandler({ title: "Error" });
   const parsed = parseDesc(w.description || "");
 
   const handleReject = () => {
@@ -156,7 +159,7 @@ function RejectModal({ w, onClose }: { w: Withdrawal; onClose: () => void }) {
         toast({ title: "Withdrawal rejected", description: `${fc(data.refunded)} refunded to the rider's wallet.` });
         onClose();
       },
-      onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+      onError: onRejectError,
     });
   };
 

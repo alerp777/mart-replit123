@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { fetcher, apiFetch } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
+import { useErrorHandler } from "@/hooks/useErrorHandler";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -133,6 +134,7 @@ function TransactionsPanel() {
 
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { onError: onWalletError } = useErrorHandler({ title: "Failed" });
 
   const params = new URLSearchParams({ page: String(page), limit: "50" });
   if (userId)   params.set("userId", userId);
@@ -166,7 +168,7 @@ function TransactionsPanel() {
       setFlagModal(null);
       toast({ title: "Transaction flag updated" });
     },
-    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+    onError: onWalletError,
   });
 
   const freezeMutation = useMutation({
@@ -178,7 +180,7 @@ function TransactionsPanel() {
       qc.invalidateQueries({ queryKey: ["admin-wallet-stats"] });
       toast({ title: d?.data?.p2pFrozen ? "P2P transfers frozen" : "P2P transfers unfrozen" });
     },
-    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+    onError: onWalletError,
   });
 
   return (

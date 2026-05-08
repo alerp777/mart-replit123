@@ -5,6 +5,8 @@ import { PackageSearch, Plus, Search, Edit, Trash2, ToggleLeft, ToggleRight, Dow
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, usePendingProducts, useApproveProduct, useRejectProduct, useCategories, useProductStockHistory } from "@/hooks/use-admin";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
+import { useErrorHandler } from "@/hooks/useErrorHandler";
+import { parseApiError } from "@/lib/errorParser";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,9 +22,6 @@ import { useHasPermission } from "@/hooks/usePermissions";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { LastUpdated } from "@/components/ui/LastUpdated";
-
-const errMsg = (e: unknown): string =>
-  e instanceof Error ? e.message : typeof e === "string" ? e : "Unknown error";
 
 const EMPTY_FORM = {
   name: "", description: "", price: "", originalPrice: "",
@@ -231,11 +230,12 @@ function RejectModal({ product, onClose }: { product: ProductRow; onClose: () =>
   const [reason, setReason] = useState("");
   const { toast } = useToast();
   const reject = useRejectProduct();
+  const { onError: onRejectError } = useErrorHandler({ title: "Error" });
   const handleReject = () => {
     if (!reason.trim()) { toast({ title: "Reason required", variant: "destructive" }); return; }
     reject.mutate({ id: product.id, reason: reason.trim() }, {
       onSuccess: () => { toast({ title: "Product rejected" }); onClose(); },
-      onError: (e: unknown) => toast({ title: "Error", description: errMsg(e), variant: "destructive" }),
+      onError: onRejectError,
     });
   };
   return (
@@ -279,6 +279,7 @@ export default function Products() {
   const deleteMutation = useDeleteProduct();
   const approveMutation = useApproveProduct();
   const { toast } = useToast();
+  const { onError: onProductError } = useErrorHandler();
   const canWrite = useHasPermission("content.products.edit");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -334,7 +335,7 @@ export default function Products() {
       setFormData(prev => ({ ...prev, image: url }));
       toast({ title: "Image uploaded" });
     } catch (err: unknown) {
-      toast({ title: "Upload failed", description: errMsg(err), variant: "destructive" });
+      toast({ title: "Upload failed", description: parseApiError(err), variant: "destructive" });
       setImagePreview(formData.image || "");
     } finally {
       setImageUploading(false);
@@ -386,12 +387,12 @@ export default function Products() {
     if (editingId) {
       updateMutation.mutate({ id: editingId, ...payload }, {
         onSuccess: () => { toast({ title: "Product updated" }); setIsFormOpen(false); },
-        onError: err => toast({ title: "Update failed", description: err.message, variant: "destructive" })
+        onError: onProductError,
       });
     } else {
       createMutation.mutate(payload, {
         onSuccess: () => { toast({ title: "Product created" }); setIsFormOpen(false); },
-        onError: err => toast({ title: "Create failed", description: err.message, variant: "destructive" })
+        onError: onProductError,
       });
     }
   };
@@ -400,21 +401,21 @@ export default function Products() {
     if (!deleteTarget) return;
     deleteMutation.mutate(deleteTarget.id, {
       onSuccess: () => { toast({ title: "Product deleted" }); setDeleteTarget(null); },
-      onError: err => toast({ title: "Delete failed", description: err.message, variant: "destructive" })
+      onError: onProductError,
     });
   };
 
   const handleApprove = (prod: ProductRow) => {
     approveMutation.mutate({ id: prod.id }, {
       onSuccess: () => toast({ title: "Product approved", description: `${prod.name} is now live in the store` }),
-      onError: (err: unknown) => toast({ title: "Error", description: errMsg(err), variant: "destructive" }),
+      onError: onProductError,
     });
   };
 
   const toggleStock = (prod: ProductRow) => {
     updateMutation.mutate({ id: prod.id, inStock: !prod.inStock }, {
       onSuccess: () => toast({ title: prod.inStock ? "Marked out of stock" : "Marked in stock" }),
-      onError: err => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+      onError: onProductError,
     });
   };
 
