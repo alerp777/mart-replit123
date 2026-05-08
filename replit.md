@@ -61,10 +61,15 @@ Each service runs as its own workflow. The API server at port 5000 also runs an 
 |---|---|---|
 | `Start application` | `/` (hub), `/api` | 5000 |
 | `artifacts/admin: web` | `/admin/` | 23744 |
-| `Rider App` | `/rider/` | 3001 |
+| `Rider App` | `/rider/` | 3003 |
 | `Vendor App` | `/vendor/` | 3002 |
+| `Ajkmart Customer App` | `/` (Expo web) | 4200 |
 
-Port env vars: `PORT=5000` (API), `ADMIN_DEV_PORT=23744`, `RIDER_DEV_PORT=3001`, `VENDOR_DEV_PORT=3002`. Each Vite config reads its own specific env var first (e.g. `RIDER_DEV_PORT || PORT`) so apps don't fight over the global `PORT` value.
+Port env vars: `PORT=5000` (API), `ADMIN_DEV_PORT=23744`, `RIDER_DEV_PORT=3003`, `VENDOR_DEV_PORT=3002`. Each Vite config reads its own specific env var first (e.g. `RIDER_DEV_PORT || PORT`) so apps don't fight over the global `PORT` value.
+
+**Important — Replit port constraints:** Replit's workflow system only supports a fixed set of ports for `waitForPort` (3000–3003, 4200, 5000, 5173, 6000, 6800, 8000–9000). Port 23744 is outside this set, so the `artifacts/admin: web` workflow will show "failed" in Replit's UI even though the Vite process starts successfully on 23744. The admin panel is still accessible via the API server proxy at `/admin/`.
+
+**All workflows run `pnpm install --frozen-lockfile` before starting their dev server**, so a fresh Repl environment will self-heal on first run without any manual install step.
 
 ### Shared Libraries
 The monorepo contains shared libraries under `lib/` that are consumed by the artifacts via workspace `*` references:

@@ -32,17 +32,29 @@ args = "Start application"
 task = "workflow.run"
 args = "artifacts/admin: web"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Vendor App"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Rider App"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Ajkmart Customer App"
+
 [[workflows.workflow]]
 name = "Start application"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd artifacts/api-server && pnpm run dev"
-waitForPort = 5000
-
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm install --frozen-lockfile && cd artifacts/api-server && pnpm run dev"
+waitForPort = 5000
 
 [[workflows.workflow]]
 name = "artifacts/admin: web"
@@ -55,6 +67,42 @@ outputType = "console"
 task = "shell.exec"
 args = "cd artifacts/admin && ADMIN_DEV_PORT=3001 BASE_PATH=/admin/ pnpm run dev"
 waitForPort = 3001
+
+[[workflows.workflow]]
+name = "Vendor App"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm install --frozen-lockfile && cd artifacts/vendor-app && VENDOR_DEV_PORT=3002 pnpm run dev"
+waitForPort = 3002
+
+[[workflows.workflow]]
+name = "Rider App"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm install --frozen-lockfile && cd artifacts/rider-app && pnpm run dev"
+waitForPort = 3003
+
+[[workflows.workflow]]
+name = "Ajkmart Customer App"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm install --frozen-lockfile && cd artifacts/ajkmart && PORT=4200 pnpm run dev:web"
+waitForPort = 4200
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
@@ -97,25 +145,26 @@ VAPID_PRIVATE_KEY = ""
 VAPID_PUBLIC_KEY = ""
 VAPID_CONTACT_EMAIL = ""
 ALLOWED_ORIGINS = ""
-VENDOR_DEV_PORT = "21463"
+VENDOR_DEV_PORT = "3002"
 RIDER_DEV_PORT = "3003"
 DATABASE_URL = "postgresql://neondb_owner:npg_8CZnNQxSivM4@ep-withered-pond-aod3mqmg-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 ADMIN_SEED_EMAIL = "admin@ajkmart.com"
 APP_BASE_URL = "http://localhost:5000"
-ADMIN_BASE_URL = "http://localhost:3000"
-FRONTEND_URL = "http://localhost:3000,http://localhost:3001,http://localhost:3002"
-CLIENT_URL = "http://localhost:3000"
+ADMIN_BASE_URL = "http://localhost:23744"
+FRONTEND_URL = "http://localhost:23744,http://localhost:3003,http://localhost:3002,http://localhost:4200"
+CLIENT_URL = "http://localhost:4200"
 EXPO_PUBLIC_DOMAIN = "localhost:5000"
 VITE_API_BASE_URL = "http://localhost:5000"
 ADMIN_LEGACY_AUTH_DISABLED = "0"
 ADMIN_PASSWORD_RESET_TOKEN_TTL_MIN = "15"
-ADMIN_DEV_PORT = "3000"
+ADMIN_DEV_PORT = "23744"
 JWT_SECRET = "70d7bbb271fc1cf1a6397e8407153c9212f0e27c4b1b38c3f56ec08701718bc3849fe94eebaaed82f47d1cd93830ca7fe3255983484582511c8860cbec76f7cb"
 ADMIN_ACCESS_TOKEN_SECRET = "4155520e37c912db3f619ba139da551f3929df71a3501bc38bac7555f6d91b48875605d6e32b2a7ef66c68069f12f00cf212545db6aa440495089cfb9ad67dad"
 ADMIN_REFRESH_TOKEN_SECRET = "3c55bd900ca69183a11dc19b0472308ea6056d393b67228364a2fdd36c9c4d5e1bf6a8087a9f23789e01e9e90dbc577107fdb129bd2980dcbd5f3c87dc13bdcb"
 ADMIN_CSRF_SECRET = "f2c1d8a343eb9b990f34d4be93fb7bd54b9dceb6a21484328559f48e9c4f14cb16e59aa6223d751b9110c8c24e20c5eed0d8f43feae6713e25d7378e64aed9f3"
 ERROR_REPORT_HMAC_SECRET = "b02e762d5137b4f8f67c468c4648041a336bc955896917a7c519a0a85b2e085b"
 ADMIN_JWT_SECRET = "0bf96d92374ef22e78a01b29ee69c0356a06e30e3e194c75fa2458704d296412833291a297210a3b6037fc99e5f1c1117b0b8b8c358ff9aa9561c8aa3029b186"
+ADMIN_PORT_OVERRIDE = "23744"
 
 [userenv.production]
 
@@ -132,3 +181,19 @@ DEV_SEED_KEY = "local-dev-seed-ajkmart"
 
 [rules.formatter.fileExtensions.".ts"]
 id = "module:nodejs-24/languageServer:typescript-language-server"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 3003
+externalPort = 3003
+
+[[ports]]
+localPort = 3002
+externalPort = 3002
+
+[[ports]]
+localPort = 4200
+externalPort = 4200

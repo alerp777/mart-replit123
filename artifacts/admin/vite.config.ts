@@ -4,9 +4,15 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
-// ADMIN_DEV_PORT takes priority, then PORT, then falls back to 23744.
-// This avoids conflicts when PORT=5000 is set globally for the API server.
-const rawPort = process.env.ADMIN_DEV_PORT || process.env.PORT || "23744";
+// ADMIN_PORT_OVERRIDE (set in userenv) beats the workflow-command's ADMIN_DEV_PORT=3001,
+// then ADMIN_DEV_PORT, then PORT, then falls back to 23744.
+// The Replit artifact platform monitors port 23744 for this workflow, so
+// ADMIN_PORT_OVERRIDE=23744 must be set in userenv.shared to match it.
+const rawPort =
+  process.env.ADMIN_PORT_OVERRIDE ||
+  process.env.ADMIN_DEV_PORT ||
+  process.env.PORT ||
+  "23744";
 const port = Number(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
