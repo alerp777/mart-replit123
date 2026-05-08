@@ -5,9 +5,18 @@
  * AJKMart Super App API
  * OpenAPI spec version: 0.1.0
  */
+import type { PharmacyOrderResponseItemsItem } from "./pharmacyOrderResponseItemsItem";
+import type { PharmacyOrderResponseStatus } from "./pharmacyOrderResponseStatus";
 
 export interface PharmacyOrderResponse {
   id: string;
-  status: string;
-  estimatedMinutes?: number;
+  userId: string;
+  items?: PharmacyOrderResponseItemsItem[];
+  prescriptionUrl?: string;
+  status: PharmacyOrderResponseStatus;
+  total?: number;
+  deliveryAddress?: string;
+  paymentMethod?: string;
+  note?: string;
+  createdAt: string;
 }

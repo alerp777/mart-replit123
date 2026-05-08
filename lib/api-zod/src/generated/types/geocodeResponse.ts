@@ -7,8 +7,8 @@
  */
 
 export interface GeocodeResponse {
+  lat: number;
+  lng: number;
   formattedAddress?: string;
-  lat?: number;
-  lng?: number;
   placeId?: string;
 }

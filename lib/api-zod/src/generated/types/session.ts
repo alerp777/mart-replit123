@@ -6,11 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface SchoolRoute {
+export interface Session {
   id: string;
-  schoolName: string;
-  area: string;
-  pickupTime?: string;
-  dropoffTime?: string;
-  monthlyFare: number;
+  userAgent?: string;
+  ip?: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  isCurrent?: boolean;
 }

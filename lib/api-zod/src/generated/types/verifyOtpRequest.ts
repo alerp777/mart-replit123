@@ -5,8 +5,10 @@
  * AJKMart Super App API
  * OpenAPI spec version: 0.1.0
  */
+import type { VerifyOtpRequestRole } from "./verifyOtpRequestRole";
 
 export interface VerifyOtpRequest {
   phone: string;
   otp: string;
+  role?: VerifyOtpRequestRole;
 }

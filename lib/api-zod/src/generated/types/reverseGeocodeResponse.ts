@@ -5,13 +5,9 @@
  * AJKMart Super App API
  * OpenAPI spec version: 0.1.0
  */
-import type { ReverseGeocodeResponseSource } from "./reverseGeocodeResponseSource";
 
 export interface ReverseGeocodeResponse {
-  /** Concise human-readable address (road + city) */
-  address?: string;
-  /** Full formatted address from provider */
-  formattedAddress?: string;
-  /** Which geocoding provider resolved the address */
-  source?: ReverseGeocodeResponseSource;
+  address: string;
+  city?: string;
+  country?: string;
 }

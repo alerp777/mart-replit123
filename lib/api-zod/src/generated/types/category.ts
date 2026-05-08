@@ -10,7 +10,7 @@ import type { CategoryType } from "./categoryType";
 export interface Category {
   id: string;
   name: string;
-  icon: string;
   type: CategoryType;
-  productCount?: number;
+  image?: string;
+  parentId?: string | null;
 }

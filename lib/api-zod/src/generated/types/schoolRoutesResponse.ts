@@ -5,8 +5,8 @@
  * AJKMart Super App API
  * OpenAPI spec version: 0.1.0
  */
-import type { SchoolRoute } from "./schoolRoute";
+import type { SchoolRoutesResponseRoutesItem } from "./schoolRoutesResponseRoutesItem";
 
 export interface SchoolRoutesResponse {
-  routes: SchoolRoute[];
+  routes: SchoolRoutesResponseRoutesItem[];
 }

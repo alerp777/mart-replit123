@@ -10,6 +10,6 @@ export type CreatePharmacyOrderRequestPaymentMethod =
   (typeof CreatePharmacyOrderRequestPaymentMethod)[keyof typeof CreatePharmacyOrderRequestPaymentMethod];
 
 export const CreatePharmacyOrderRequestPaymentMethod = {
-  cash: "cash",
+  cod: "cod",
   wallet: "wallet",
 } as const;

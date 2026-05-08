@@ -9,8 +9,69 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface AuthConfig {
+  auth_mode: string;
+  firebase_enabled?: string;
+  auth_otp_enabled?: string;
+  auth_email_enabled?: string;
+  auth_google_enabled?: string;
+  auth_facebook_enabled?: string;
+  otpBypassActive: boolean;
+  otpBypassExpiresAt?: string | null;
+  bypassMessage?: string | null;
+}
+
+export interface OtpStatusResponse {
+  bypassActive: boolean;
+  bypassExpiresAt?: string | null;
+  message?: string | null;
+}
+
+export type CheckIdentifierRequestRole =
+  (typeof CheckIdentifierRequestRole)[keyof typeof CheckIdentifierRequestRole];
+
+export const CheckIdentifierRequestRole = {
+  customer: "customer",
+  rider: "rider",
+  vendor: "vendor",
+} as const;
+
+export interface CheckIdentifierRequest {
+  identifier: string;
+  role?: CheckIdentifierRequestRole;
+  deviceId?: string;
+}
+
+export interface CheckIdentifierResponse {
+  action: string;
+  availableMethods: string[];
+  isBanned?: boolean;
+  isLocked?: boolean;
+  lockedMinutes?: number;
+}
+
+export type SendOtpRequestRole =
+  (typeof SendOtpRequestRole)[keyof typeof SendOtpRequestRole];
+
+export const SendOtpRequestRole = {
+  customer: "customer",
+  rider: "rider",
+  vendor: "vendor",
+} as const;
+
+export type SendOtpRequestPreferredChannel =
+  (typeof SendOtpRequestPreferredChannel)[keyof typeof SendOtpRequestPreferredChannel];
+
+export const SendOtpRequestPreferredChannel = {
+  whatsapp: "whatsapp",
+  sms: "sms",
+  email: "email",
+} as const;
+
 export interface SendOtpRequest {
   phone: string;
+  role?: SendOtpRequestRole;
+  preferredChannel?: SendOtpRequestPreferredChannel;
 }
 
 export interface SendOtpResponse {
@@ -19,9 +80,128 @@ export interface SendOtpResponse {
   otp?: string;
 }
 
+export type VerifyOtpRequestRole =
+  (typeof VerifyOtpRequestRole)[keyof typeof VerifyOtpRequestRole];
+
+export const VerifyOtpRequestRole = {
+  customer: "customer",
+  rider: "rider",
+  vendor: "vendor",
+} as const;
+
 export interface VerifyOtpRequest {
   phone: string;
   otp: string;
+  role?: VerifyOtpRequestRole;
+}
+
+export type RegisterRequestRole =
+  (typeof RegisterRequestRole)[keyof typeof RegisterRequestRole];
+
+export const RegisterRequestRole = {
+  customer: "customer",
+  rider: "rider",
+  vendor: "vendor",
+} as const;
+
+export interface RegisterRequest {
+  phone: string;
+  password: string;
+  name?: string;
+  role?: RegisterRequestRole;
+  email?: string;
+  username?: string;
+  businessName?: string;
+  storeName?: string;
+  vehicleType?: string;
+  vehiclePlate?: string;
+}
+
+export type LoginRequestRole =
+  (typeof LoginRequestRole)[keyof typeof LoginRequestRole];
+
+export const LoginRequestRole = {
+  customer: "customer",
+  rider: "rider",
+  vendor: "vendor",
+} as const;
+
+export interface LoginRequest {
+  identifier?: string;
+  username?: string;
+  password: string;
+  role?: LoginRequestRole;
+}
+
+export interface RefreshTokenRequest {
+  refreshToken?: string;
+}
+
+export interface RefreshTokenResponse {
+  token: string;
+  refreshToken?: string;
+}
+
+export interface ForgotPasswordRequest {
+  phone?: string;
+  email?: string;
+  identifier?: string;
+}
+
+export interface ResetPasswordRequest {
+  phone?: string;
+  otp: string;
+  newPassword: string;
+}
+
+export type SocialAuthRequestRole =
+  (typeof SocialAuthRequestRole)[keyof typeof SocialAuthRequestRole];
+
+export const SocialAuthRequestRole = {
+  customer: "customer",
+  rider: "rider",
+  vendor: "vendor",
+} as const;
+
+export interface SocialAuthRequest {
+  token: string;
+  role?: SocialAuthRequestRole;
+}
+
+export interface TwoFaVerifyRequest {
+  challengeToken: string;
+  code: string;
+}
+
+export interface TwoFaSetupResponse {
+  secret: string;
+  qrCodeUrl: string;
+  uri?: string;
+}
+
+export interface LoginHistoryEntry {
+  id: string;
+  ip?: string;
+  userAgent?: string;
+  createdAt: string;
+  success: boolean;
+}
+
+export interface LoginHistoryResponse {
+  entries: LoginHistoryEntry[];
+}
+
+export interface Session {
+  id: string;
+  userAgent?: string;
+  ip?: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  isCurrent?: boolean;
+}
+
+export interface SessionsResponse {
+  sessions: Session[];
 }
 
 export type UserRole = (typeof UserRole)[keyof typeof UserRole];
@@ -46,6 +226,7 @@ export interface User {
 
 export interface AuthResponse {
   token: string;
+  refreshToken?: string;
   user: User;
 }
 
@@ -54,6 +235,21 @@ export interface UpdateProfileRequest {
   name?: string;
   email?: string;
   avatar?: string;
+}
+
+export interface CartItem {
+  productId: string;
+  name: string;
+  price: number;
+  quantity: number;
+  image?: string;
+}
+
+export interface CartSnapshot {
+  items: CartItem[];
+  vendorId?: string;
+  serviceType?: string;
+  updatedAt?: string;
 }
 
 export type ProductType = (typeof ProductType)[keyof typeof ProductType];
@@ -106,12 +302,23 @@ export interface CreateProductRequest {
   unit?: string;
 }
 
-export interface CartItem {
-  productId: string;
+export type CategoryType = (typeof CategoryType)[keyof typeof CategoryType];
+
+export const CategoryType = {
+  mart: "mart",
+  food: "food",
+} as const;
+
+export interface Category {
+  id: string;
   name: string;
-  price: number;
-  quantity: number;
+  type: CategoryType;
   image?: string;
+  parentId?: string | null;
+}
+
+export interface CategoryListResponse {
+  categories: Category[];
 }
 
 export type OrderType = (typeof OrderType)[keyof typeof OrderType];
@@ -185,6 +392,132 @@ export interface CreateOrderRequest {
   paymentMethod: CreateOrderRequestPaymentMethod;
 }
 
+export type UpdateOrderStatusRequestStatus =
+  (typeof UpdateOrderStatusRequestStatus)[keyof typeof UpdateOrderStatusRequestStatus];
+
+export const UpdateOrderStatusRequestStatus = {
+  pending: "pending",
+  confirmed: "confirmed",
+  preparing: "preparing",
+  out_for_delivery: "out_for_delivery",
+  delivered: "delivered",
+  cancelled: "cancelled",
+} as const;
+
+export interface UpdateOrderStatusRequest {
+  status: UpdateOrderStatusRequestStatus;
+  riderId?: string;
+}
+
+export type WalletTransactionType =
+  (typeof WalletTransactionType)[keyof typeof WalletTransactionType];
+
+export const WalletTransactionType = {
+  credit: "credit",
+  debit: "debit",
+} as const;
+
+export interface WalletTransaction {
+  id: string;
+  type: WalletTransactionType;
+  amount: number;
+  description: string;
+  createdAt: string;
+}
+
+export interface WalletResponse {
+  balance: number;
+  transactions: WalletTransaction[];
+}
+
+export interface WalletTransactionsResponse {
+  transactions: WalletTransaction[];
+  total: number;
+}
+
+export interface TopUpRequest {
+  userId: string;
+  amount: number;
+}
+
+export interface WalletDepositRequest {
+  amount: number;
+  paymentMethod: string;
+  transactionId: string;
+  idempotencyKey: string;
+  accountNumber?: string;
+  note?: string;
+}
+
+export interface WalletDepositResult {
+  message: string;
+  depositId?: string;
+  status?: string;
+}
+
+export type WalletDepositStatus =
+  (typeof WalletDepositStatus)[keyof typeof WalletDepositStatus];
+
+export const WalletDepositStatus = {
+  pending: "pending",
+  approved: "approved",
+  rejected: "rejected",
+} as const;
+
+export interface WalletDeposit {
+  id: string;
+  amount: number;
+  paymentMethod: string;
+  status: WalletDepositStatus;
+  transactionId?: string;
+  createdAt: string;
+}
+
+export interface WalletDepositsResponse {
+  deposits: WalletDeposit[];
+  total: number;
+}
+
+export interface WalletMethod {
+  id: string;
+  label: string;
+  description?: string;
+  minAmount?: number;
+  maxAmount?: number;
+  fee?: number;
+  logo?: string;
+  available: boolean;
+}
+
+export interface WalletMethodsResponse {
+  methods: WalletMethod[];
+}
+
+export interface WalletWithdrawRequest {
+  amount: number;
+  method: string;
+  accountNumber: string;
+  accountTitle?: string;
+  note?: string;
+}
+
+export interface WalletSendRequest {
+  receiverPhone?: string;
+  ajkId?: string;
+  amount: number;
+  note?: string;
+}
+
+export interface WalletHolderResponse {
+  name: string;
+  phone: string;
+  avatar?: string;
+}
+
+export interface WalletPinRequest {
+  pin: string;
+}
+
 export interface RideStop {
   id: string;
   name: string;
@@ -215,6 +548,461 @@ export interface RideService {
 
 export interface RideServicesResponse {
   services: RideService[];
+}
+
+export interface RideBid {
+  id: string;
+  rideId: string;
+  riderId: string;
+  riderName: string;
+  riderPhone?: string | null;
+  fare: number;
+  note?: string | null;
+  status: string;
+  vehiclePlate?: string | null;
+  vehicleType?: string | null;
+  ratingAvg?: number | null;
+  totalRides: number;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type RideType = (typeof RideType)[keyof typeof RideType];
+
+export const RideType = {
+  car: "car",
+  bike: "bike",
+} as const;
+
+export type RideStatus = (typeof RideStatus)[keyof typeof RideStatus];
+
+export const RideStatus = {
+  searching: "searching",
+  confirmed: "confirmed",
+  in_progress: "in_progress",
+  completed: "completed",
+  cancelled: "cancelled",
+} as const;
+
+export type RidePaymentMethod =
+  (typeof RidePaymentMethod)[keyof typeof RidePaymentMethod];
+
+export const RidePaymentMethod = {
+  cash: "cash",
+  wallet: "wallet",
+} as const;
+
+export interface Ride {
+  id: string;
+  userId: string;
+  type: RideType;
+  status: RideStatus;
+  pickupAddress?: string;
+  dropAddress?: string;
+  pickupLat?: number;
+  pickupLng?: number;
+  dropLat?: number;
+  dropLng?: number;
+  fare: number;
+  distance: number;
+  riderId?: string;
+  riderName?: string;
+  riderPhone?: string;
+  paymentMethod: RidePaymentMethod;
+  tripOtp?: string | null;
+  otpVerified?: boolean;
+  createdAt: string;
+  /** Live latitude of the assigned rider (active statuses only) */
+  riderLat?: number | null;
+  /** Live longitude of the assigned rider (active statuses only) */
+  riderLng?: number | null;
+  /** Seconds since the rider's live location was last updated */
+  riderLocAge?: number | null;
+  /** Average star rating of the assigned rider */
+  riderAvgRating?: number | null;
+  /** Pending bids on this ride (only populated while bargaining) */
+  bids?: RideBid[];
+}
+
+export type BookRideRequestType =
+  (typeof BookRideRequestType)[keyof typeof BookRideRequestType];
+
+export const BookRideRequestType = {
+  car: "car",
+  bike: "bike",
+} as const;
+
+export type BookRideRequestPaymentMethod =
+  (typeof BookRideRequestPaymentMethod)[keyof typeof BookRideRequestPaymentMethod];
+
+export const BookRideRequestPaymentMethod = {
+  cash: "cash",
+  wallet: "wallet",
+} as const;
+
+export interface BookRideRequest {
+  userId: string;
+  type: BookRideRequestType;
+  pickupAddress: string;
+  dropAddress: string;
+  pickupLat?: number;
+  pickupLng?: number;
+  dropLat?: number;
+  dropLng?: number;
+  paymentMethod: BookRideRequestPaymentMethod;
+}
+
+export type EstimateFareRequestType =
+  (typeof EstimateFareRequestType)[keyof typeof EstimateFareRequestType];
+
+export const EstimateFareRequestType = {
+  car: "car",
+  bike: "bike",
+} as const;
+
+export interface EstimateFareRequest {
+  pickupLat: number;
+  pickupLng: number;
+  dropLat: number;
+  dropLng: number;
+  type: EstimateFareRequestType;
+}
+
+export interface FareEstimate {
+  distance: number;
+  fare: number;
+  duration: string;
+  type: string;
+}
+
+export interface RideHistoryResponse {
+  rides: Ride[];
+  total: number;
+}
+
+export type NotificationData = { [key: string]: unknown };
+
+export interface Notification {
+  id: string;
+  title: string;
+  body: string;
+  type?: string;
+  data?: NotificationData;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface NotificationsResponse {
+  notifications: Notification[];
+  unreadCount: number;
+  total: number;
+}
+
+export interface Address {
+  id: string;
+  label?: string;
+  address: string;
+  lat?: number;
+  lng?: number;
+  isDefault: boolean;
+  city?: string;
+  createdAt: string;
+}
+
+export interface AddressesResponse {
+  addresses: Address[];
+}
+
+export interface CreateAddressRequest {
+  label?: string;
+  address: string;
+  lat?: number;
+  lng?: number;
+  isDefault?: boolean;
+  city?: string;
+}
+
+export interface Review {
+  id: string;
+  productId: string;
+  userId: string;
+  userName?: string;
+  rating: number;
+  comment?: string;
+  images?: string[];
+  createdAt: string;
+}
+
+export interface ReviewsResponse {
+  reviews: Review[];
+  total: number;
+}
+
+export type ReviewSummaryRatingBreakdown = { [key: string]: number };
+
+export interface ReviewSummary {
+  averageRating: number;
+  totalReviews: number;
+  ratingBreakdown?: ReviewSummaryRatingBreakdown;
+}
+
+export interface SubmitReviewRequest {
+  productId: string;
+  orderId?: string;
+  rating: number;
+  comment?: string;
+  images?: string[];
+}
+
+export interface ReferralCodeResponse {
+  code: string;
+  totalReferrals: number;
+  totalEarned: number;
+  pendingBonus?: number;
+}
+
+export interface ApplyReferralRequest {
+  code: string;
+}
+
+export interface LoyaltyBalance {
+  points: number;
+  valueInCurrency: number;
+  tier?: string;
+  nextTierPoints?: number;
+}
+
+export interface LoyaltyRedeemRequest {
+  points: number;
+}
+
+export type KycStatusStatus =
+  (typeof KycStatusStatus)[keyof typeof KycStatusStatus];
+
+export const KycStatusStatus = {
+  not_submitted: "not_submitted",
+  pending: "pending",
+  approved: "approved",
+  rejected: "rejected",
+} as const;
+
+export interface KycStatus {
+  status: KycStatusStatus;
+  submittedAt?: string;
+  reviewedAt?: string;
+  rejectionReason?: string;
+}
+
+export interface KycSubmitRequest {
+  cnicFront: string;
+  cnicBack: string;
+  selfie: string;
+  cnicNumber?: string;
+}
+
+export type PushSubscribeRequestKeys = {
+  p256dh: string;
+  auth: string;
+};
+
+export interface PushSubscribeRequest {
+  endpoint: string;
+  keys: PushSubscribeRequestKeys;
+  userAgent?: string;
+}
+
+export interface SosRequest {
+  lat: number;
+  lng: number;
+  rideId?: string;
+  message?: string;
+}
+
+export interface SosResponse {
+  alertId: string;
+  message: string;
+}
+
+export type SupportMessageType =
+  (typeof SupportMessageType)[keyof typeof SupportMessageType];
+
+export const SupportMessageType = {
+  text: "text",
+  image: "image",
+  audio: "audio",
+  location: "location",
+} as const;
+
+export type SupportMessageSenderRole =
+  (typeof SupportMessageSenderRole)[keyof typeof SupportMessageSenderRole];
+
+export const SupportMessageSenderRole = {
+  customer: "customer",
+  support: "support",
+} as const;
+
+export interface SupportMessage {
+  id: string;
+  content: string;
+  type: SupportMessageType;
+  senderRole: SupportMessageSenderRole;
+  createdAt: string;
+}
+
+export interface SupportMessagesResponse {
+  messages: SupportMessage[];
+  total: number;
+}
+
+export type SendSupportMessageRequestType =
+  (typeof SendSupportMessageRequestType)[keyof typeof SendSupportMessageRequestType];
+
+export const SendSupportMessageRequestType = {
+  text: "text",
+  image: "image",
+  audio: "audio",
+  location: "location",
+} as const;
+
+export interface SendSupportMessageRequest {
+  content: string;
+  type?: SendSupportMessageRequestType;
+}
+
+export interface DeliveryEligibility {
+  eligible: boolean;
+  reason?: string;
+  estimatedTime?: string;
+  deliveryFee?: number;
+}
+
+export type PromotionDiscountType =
+  (typeof PromotionDiscountType)[keyof typeof PromotionDiscountType];
+
+export const PromotionDiscountType = {
+  percentage: "percentage",
+  fixed: "fixed",
+} as const;
+
+export interface Promotion {
+  id: string;
+  code?: string;
+  title: string;
+  description?: string;
+  discountType: PromotionDiscountType;
+  discountValue: number;
+  minOrderAmount?: number;
+  maxDiscount?: number;
+  expiresAt?: string;
+  bannerImage?: string;
+}
+
+export interface PromotionsListResponse {
+  promotions: Promotion[];
+}
+
+export interface ValidatePromoRequest {
+  code: string;
+  orderAmount: number;
+  vendorId?: string;
+}
+
+export interface PromoValidationResult {
+  valid: boolean;
+  discount?: number;
+  finalAmount?: number;
+  promotion?: Promotion;
+  message?: string;
+}
+
+export interface Banner {
+  id: string;
+  title?: string;
+  imageUrl: string;
+  linkUrl?: string;
+  type?: string;
+  position?: number;
+  isActive: boolean;
+}
+
+export interface BannersResponse {
+  banners: Banner[];
+}
+
+export interface RecommendationsResponse {
+  products: Product[];
+}
+
+/**
+ * Key-value map of platform settings
+ */
+export interface PlatformConfig {
+  [key: string]: string;
+}
+
+export interface FaqEntry {
+  id: string;
+  question: string;
+  answer: string;
+  category?: string;
+}
+
+export type PharmacyOrderResponseItemsItem = {
+  name: string;
+  quantity: number;
+  price?: number;
+};
+
+export type PharmacyOrderResponseStatus =
+  (typeof PharmacyOrderResponseStatus)[keyof typeof PharmacyOrderResponseStatus];
+
+export const PharmacyOrderResponseStatus = {
+  pending: "pending",
+  confirmed: "confirmed",
+  preparing: "preparing",
+  out_for_delivery: "out_for_delivery",
+  delivered: "delivered",
+  cancelled: "cancelled",
+} as const;
+
+export interface PharmacyOrderResponse {
+  id: string;
+  userId: string;
+  items?: PharmacyOrderResponseItemsItem[];
+  prescriptionUrl?: string;
+  status: PharmacyOrderResponseStatus;
+  total?: number;
+  deliveryAddress?: string;
+  paymentMethod?: string;
+  note?: string;
+  createdAt: string;
+}
+
+export interface PharmacyOrdersResponse {
+  orders: PharmacyOrderResponse[];
+  total: number;
+}
+
+export type CreatePharmacyOrderRequestItemsItem = {
+  name: string;
+  quantity: number;
+};
+
+export type CreatePharmacyOrderRequestPaymentMethod =
+  (typeof CreatePharmacyOrderRequestPaymentMethod)[keyof typeof CreatePharmacyOrderRequestPaymentMethod];
+
+export const CreatePharmacyOrderRequestPaymentMethod = {
+  cod: "cod",
+  wallet: "wallet",
+} as const;
+
+export interface CreatePharmacyOrderRequest {
+  items?: CreatePharmacyOrderRequestItemsItem[];
+  prescriptionUrl?: string;
+  deliveryAddress: string;
+  paymentMethod: CreatePharmacyOrderRequestPaymentMethod;
+  note?: string;
 }
 
 export interface ParcelEstimateRequest {
@@ -310,175 +1098,6 @@ export interface PaymentMethodsResponse {
   methods: PaymentMethod[];
 }
 
-export type UpdateOrderStatusRequestStatus =
-  (typeof UpdateOrderStatusRequestStatus)[keyof typeof UpdateOrderStatusRequestStatus];
-
-export const UpdateOrderStatusRequestStatus = {
-  pending: "pending",
-  confirmed: "confirmed",
-  preparing: "preparing",
-  out_for_delivery: "out_for_delivery",
-  delivered: "delivered",
-  cancelled: "cancelled",
-} as const;
-
-export interface UpdateOrderStatusRequest {
-  status: UpdateOrderStatusRequestStatus;
-  riderId?: string;
-}
-
-export type WalletTransactionType =
-  (typeof WalletTransactionType)[keyof typeof WalletTransactionType];
-
-export const WalletTransactionType = {
-  credit: "credit",
-  debit: "debit",
-} as const;
-
-export interface WalletTransaction {
-  id: string;
-  type: WalletTransactionType;
-  amount: number;
-  description: string;
-  createdAt: string;
-}
-
-export interface WalletResponse {
-  balance: number;
-  transactions: WalletTransaction[];
-}
-
-export interface TopUpRequest {
-  userId: string;
-  amount: number;
-}
-
-export type RideType = (typeof RideType)[keyof typeof RideType];
-
-export const RideType = {
-  car: "car",
-  bike: "bike",
-} as const;
-
-export type RideStatus = (typeof RideStatus)[keyof typeof RideStatus];
-
-export const RideStatus = {
-  searching: "searching",
-  confirmed: "confirmed",
-  in_progress: "in_progress",
-  completed: "completed",
-  cancelled: "cancelled",
-} as const;
-
-export type RidePaymentMethod =
-  (typeof RidePaymentMethod)[keyof typeof RidePaymentMethod];
-
-export const RidePaymentMethod = {
-  cash: "cash",
-  wallet: "wallet",
-} as const;
-
-export interface RideBid {
-  id: string;
-  rideId: string;
-  riderId: string;
-  riderName: string;
-  riderPhone?: string | null;
-  fare: number;
-  note?: string | null;
-  status: string;
-  vehiclePlate?: string | null;
-  vehicleType?: string | null;
-  ratingAvg?: number | null;
-  totalRides: number;
-  expiresAt: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface Ride {
-  id: string;
-  userId: string;
-  type: RideType;
-  status: RideStatus;
-  pickupAddress?: string;
-  dropAddress?: string;
-  pickupLat?: number;
-  pickupLng?: number;
-  dropLat?: number;
-  dropLng?: number;
-  fare: number;
-  distance: number;
-  riderId?: string;
-  riderName?: string;
-  riderPhone?: string;
-  paymentMethod: RidePaymentMethod;
-  tripOtp?: string | null;
-  otpVerified?: boolean;
-  createdAt: string;
-  /** Live latitude of the assigned rider (active statuses only) */
-  riderLat?: number | null;
-  /** Live longitude of the assigned rider (active statuses only) */
-  riderLng?: number | null;
-  /** Seconds since the rider's live location was last updated */
-  riderLocAge?: number | null;
-  /** Average star rating of the assigned rider */
-  riderAvgRating?: number | null;
-  /** Pending bids on this ride (only populated while bargaining) */
-  bids?: RideBid[];
-}
-
-export type BookRideRequestType =
-  (typeof BookRideRequestType)[keyof typeof BookRideRequestType];
-
-export const BookRideRequestType = {
-  car: "car",
-  bike: "bike",
-} as const;
-
-export type BookRideRequestPaymentMethod =
-  (typeof BookRideRequestPaymentMethod)[keyof typeof BookRideRequestPaymentMethod];
-
-export const BookRideRequestPaymentMethod = {
-  cash: "cash",
-  wallet: "wallet",
-} as const;
-
-export interface BookRideRequest {
-  userId: string;
-  type: BookRideRequestType;
-  pickupAddress: string;
-  dropAddress: string;
-  pickupLat?: number;
-  pickupLng?: number;
-  dropLat?: number;
-  dropLng?: number;
-  paymentMethod: BookRideRequestPaymentMethod;
-}
-
-export type EstimateFareRequestType =
-  (typeof EstimateFareRequestType)[keyof typeof EstimateFareRequestType];
-
-export const EstimateFareRequestType = {
-  car: "car",
-  bike: "bike",
-} as const;
-
-export interface EstimateFareRequest {
-  pickupLat: number;
-  pickupLng: number;
-  dropLat: number;
-  dropLng: number;
-  type: EstimateFareRequestType;
-}
-
-export interface FareEstimate {
-  distance: number;
-  fare: number;
-  duration: string;
-  type: string;
-}
-
 export interface UpdateLocationRequest {
   userId: string;
   latitude: number;
@@ -491,117 +1110,300 @@ export interface LocationResponse {
   updatedAt: string;
 }
 
-export type CategoryType = (typeof CategoryType)[keyof typeof CategoryType];
+export interface RiderLocationUpdate {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  heading?: number;
+  speed?: number;
+  batteryLevel?: number;
+}
 
-export const CategoryType = {
-  mart: "mart",
-  food: "food",
-} as const;
+export interface GeocodeResponse {
+  lat: number;
+  lng: number;
+  formattedAddress?: string;
+  placeId?: string;
+}
 
-export interface Category {
+export interface ReverseGeocodeResponse {
+  address: string;
+  city?: string;
+  country?: string;
+}
+
+export type SchoolRoutesResponseRoutesItem = {
   id: string;
   name: string;
-  icon: string;
-  type: CategoryType;
-  productCount?: number;
-}
-
-export interface CategoryListResponse {
-  categories: Category[];
-}
-
-export interface RideHistoryResponse {
-  rides: Ride[];
-}
-
-export interface SchoolRoute {
-  id: string;
-  schoolName: string;
-  area: string;
-  pickupTime?: string;
-  dropoffTime?: string;
-  monthlyFare: number;
-}
+  shift: string;
+  capacity?: number;
+};
 
 export interface SchoolRoutesResponse {
-  routes: SchoolRoute[];
+  routes: SchoolRoutesResponseRoutesItem[];
 }
-
-export type SchoolSubscribeRequestPaymentMethod =
-  (typeof SchoolSubscribeRequestPaymentMethod)[keyof typeof SchoolSubscribeRequestPaymentMethod];
-
-export const SchoolSubscribeRequestPaymentMethod = {
-  cash: "cash",
-  wallet: "wallet",
-} as const;
 
 export interface SchoolSubscribeRequest {
   routeId: string;
   studentName: string;
-  studentClass: string;
-  paymentMethod: SchoolSubscribeRequestPaymentMethod;
+  grade?: string;
+  parentPhone?: string;
 }
 
-export interface GeocodeResponse {
-  formattedAddress?: string;
-  lat?: number;
-  lng?: number;
-  placeId?: string;
+export interface VendorProfile {
+  id: string;
+  userId: string;
+  businessName?: string;
+  storeName?: string;
+  businessType?: string;
+  phone?: string;
+  email?: string;
+  avatar?: string;
+  isOnline: boolean;
+  isApproved: boolean;
+  rating?: number;
+  totalOrders?: number;
 }
 
-/**
- * Which geocoding provider resolved the address
- */
-export type ReverseGeocodeResponseSource =
-  (typeof ReverseGeocodeResponseSource)[keyof typeof ReverseGeocodeResponseSource];
+export interface UpdateVendorProfileRequest {
+  businessName?: string;
+  storeName?: string;
+  phone?: string;
+  email?: string;
+  avatar?: string;
+  quickReplies?: string[];
+}
 
-export const ReverseGeocodeResponseSource = {
-  google: "google",
-  nominatim: "nominatim",
-  fallback: "fallback",
-  cache: "cache",
-} as const;
-
-export interface ReverseGeocodeResponse {
-  /** Concise human-readable address (road + city) */
+export interface VendorStore {
+  minOrderAmount?: number;
+  deliveryFee?: number;
+  estimatedDeliveryTime?: string;
+  acceptsOnlinePayment?: boolean;
+  acceptsCash?: boolean;
+  description?: string;
   address?: string;
-  /** Full formatted address from provider */
-  formattedAddress?: string;
-  /** Which geocoding provider resolved the address */
-  source?: ReverseGeocodeResponseSource;
+  city?: string;
 }
 
-export interface PharmacyOrderItem {
+export interface VendorStats {
+  todayOrders: number;
+  todayRevenue: number;
+  pendingOrders: number;
+  totalRevenue?: number;
+  totalOrders?: number;
+  averageRating?: number;
+}
+
+export interface VendorOrder {
   id: string;
-  name: string;
-  price: number;
-  quantity: number;
+  userId: string;
+  items: CartItem[];
+  status: string;
+  total: number;
+  deliveryAddress?: string;
+  paymentMethod: string;
+  note?: string;
+  customerName?: string;
+  customerPhone?: string;
+  createdAt: string;
 }
 
-export type CreatePharmacyOrderRequestPaymentMethod =
-  (typeof CreatePharmacyOrderRequestPaymentMethod)[keyof typeof CreatePharmacyOrderRequestPaymentMethod];
+export interface VendorOrdersResponse {
+  orders: VendorOrder[];
+  total: number;
+}
 
-export const CreatePharmacyOrderRequestPaymentMethod = {
-  cash: "cash",
-  wallet: "wallet",
+export interface VendorCreateProductRequest {
+  name: string;
+  description?: string;
+  price: number;
+  categoryId: string;
+  stock?: number;
+  unit?: string;
+  images?: string[];
+  isAvailable?: boolean;
+  discountPercent?: number;
+}
+
+export type VendorAnalyticsRevenueItem = {
+  date?: string;
+  amount?: number;
+};
+
+export type VendorAnalyticsOrdersItem = {
+  date?: string;
+  count?: number;
+};
+
+export interface VendorAnalytics {
+  period: string;
+  revenue: VendorAnalyticsRevenueItem[];
+  orders: VendorAnalyticsOrdersItem[];
+  topProducts?: Product[];
+}
+
+export interface DaySchedule {
+  open: boolean;
+  openTime?: string;
+  closeTime?: string;
+}
+
+export interface VendorSchedule {
+  monday?: DaySchedule;
+  tuesday?: DaySchedule;
+  wednesday?: DaySchedule;
+  thursday?: DaySchedule;
+  friday?: DaySchedule;
+  saturday?: DaySchedule;
+  sunday?: DaySchedule;
+}
+
+export interface RiderProfile {
+  id: string;
+  userId: string;
+  name?: string;
+  phone?: string;
+  avatar?: string;
+  vehicleType?: string;
+  vehiclePlate?: string;
+  isOnline: boolean;
+  isApproved: boolean;
+  rating?: number;
+  totalRides?: number;
+  walletBalance?: number;
+}
+
+export interface UpdateRiderProfileRequest {
+  name?: string;
+  avatar?: string;
+  vehiclePlate?: string;
+  vehicleType?: string;
+  emergencyContact?: string;
+}
+
+export interface RiderRequestsResponse {
+  orders: Order[];
+  rides: Ride[];
+}
+
+export type RiderActiveResponseType =
+  | (typeof RiderActiveResponseType)[keyof typeof RiderActiveResponseType]
+  | null;
+
+export const RiderActiveResponseType = {
+  order: "order",
+  ride: "ride",
+  parcel: "parcel",
 } as const;
 
-export interface CreatePharmacyOrderRequest {
-  items: PharmacyOrderItem[];
-  prescriptionNote?: string | null;
-  deliveryAddress: string;
-  contactPhone: string;
-  paymentMethod: CreatePharmacyOrderRequestPaymentMethod;
+export interface RiderActiveResponse {
+  type?: RiderActiveResponseType;
+  order?: Order;
+  ride?: Ride;
 }
 
-export interface PharmacyOrderResponse {
+export type RiderHistoryResponseEntriesItemType =
+  (typeof RiderHistoryResponseEntriesItemType)[keyof typeof RiderHistoryResponseEntriesItemType];
+
+export const RiderHistoryResponseEntriesItemType = {
+  order: "order",
+  ride: "ride",
+  parcel: "parcel",
+} as const;
+
+export type RiderHistoryResponseEntriesItem = {
   id: string;
+  type: RiderHistoryResponseEntriesItemType;
   status: string;
-  estimatedMinutes?: number;
+  fare?: number;
+  createdAt: string;
+};
+
+export interface RiderHistoryResponse {
+  entries: RiderHistoryResponseEntriesItem[];
+  total: number;
 }
+
+export type RiderEarningsBreakdownItem = {
+  date?: string;
+  amount?: number;
+};
+
+export interface RiderEarnings {
+  period: string;
+  totalEarnings: number;
+  totalRides: number;
+  totalOrders: number;
+  cashCollected?: number;
+  walletBalance?: number;
+  breakdown?: RiderEarningsBreakdownItem[];
+}
+
+export type GetOtpStatusParams = {
+  phone: string;
+};
+
+export type SendEmailOtpBody = {
+  email: string;
+};
+
+export type VerifyEmailOtpBody = {
+  email: string;
+  otp: string;
+};
+
+export type Logout200 = {
+  message?: string;
+};
+
+export type ValidateToken200 = {
+  valid?: boolean;
+  user?: User;
+};
+
+export type ResetPassword200 = {
+  message?: string;
+};
+
+export type SetPasswordBody = {
+  password: string;
+};
+
+export type SetPassword200 = {
+  message?: string;
+};
+
+export type SendMagicLinkBody = {
+  email: string;
+};
+
+export type VerifyMagicLinkBody = {
+  token: string;
+};
+
+export type VerifyTwoFaSetupBody = {
+  token: string;
+};
+
+export type VerifyTwoFaSetup200 = {
+  message?: string;
+  recoveryCodes?: string[];
+};
+
+export type RevokeAllSessions200 = {
+  message?: string;
+};
+
+export type RevokeSession200 = {
+  message?: string;
+};
 
 export type GetProfileParams = {
   userId: string;
+};
+
+export type ClearCartSnapshot200 = {
+  message?: string;
 };
 
 export type GetProductsParams = {
@@ -619,6 +1421,18 @@ export const GetProductsType = {
   food: "food",
 } as const;
 
+export type GetCategoriesParams = {
+  type?: GetCategoriesType;
+};
+
+export type GetCategoriesType =
+  (typeof GetCategoriesType)[keyof typeof GetCategoriesType];
+
+export const GetCategoriesType = {
+  mart: "mart",
+  food: "food",
+} as const;
+
 export type GetOrdersParams = {
   userId: string;
   status?: string;
@@ -626,6 +1440,45 @@ export type GetOrdersParams = {
 
 export type GetWalletParams = {
   userId: string;
+};
+
+export type WalletWithdraw200 = {
+  message?: string;
+  withdrawalId?: string;
+};
+
+export type ResolveWalletPhoneBody = {
+  phone: string;
+};
+
+export type WalletSend200 = {
+  message?: string;
+  newBalance?: number;
+};
+
+export type SetupWalletPin200 = {
+  message?: string;
+};
+
+export type VerifyWalletPin200 = {
+  valid?: boolean;
+};
+
+export type ChangeWalletPinBody = {
+  currentPin: string;
+  newPin: string;
+};
+
+export type ChangeWalletPin200 = {
+  message?: string;
+};
+
+export type UpdateWalletVisibilityBody = {
+  hidden: boolean;
+};
+
+export type UpdateWalletVisibility200 = {
+  hidden?: boolean;
 };
 
 export type CancelRideBody = {
@@ -638,6 +1491,93 @@ export type AcceptRideBidBody = {
 
 export type CustomerCounterOfferBody = {
   offeredFare?: number;
+};
+
+export type GetNotificationsParams = {
+  limit?: number;
+  after?: string;
+};
+
+export type MarkAllNotificationsRead200 = {
+  message?: string;
+};
+
+export type GetProductReviewsParams = {
+  limit?: number;
+  after?: string;
+};
+
+export type CheckCanReview200 = {
+  canReview?: boolean;
+};
+
+export type ApplyReferralCode200 = {
+  message?: string;
+  bonus?: number;
+};
+
+export type RedeemLoyaltyPoints200 = {
+  message?: string;
+  pointsUsed?: number;
+  walletCredit?: number;
+};
+
+export type GetPushVapidKey200 = {
+  publicKey?: string;
+};
+
+export type SubscribePush200 = {
+  message?: string;
+};
+
+export type UnsubscribePushBody = {
+  endpoint: string;
+};
+
+export type GetSupportMessagesParams = {
+  limit?: number;
+  after?: string;
+};
+
+export type GetDeliveryEligibilityParams = {
+  lat?: number;
+  lng?: number;
+  address?: string;
+};
+
+export type GetBannersParams = {
+  type?: string;
+};
+
+export type GetTrendingProductsParams = {
+  limit?: number;
+};
+
+export type TrackProductInteractionBodyAction =
+  (typeof TrackProductInteractionBodyAction)[keyof typeof TrackProductInteractionBodyAction];
+
+export const TrackProductInteractionBodyAction = {
+  view: "view",
+  click: "click",
+  purchase: "purchase",
+  wishlist: "wishlist",
+} as const;
+
+export type TrackProductInteractionBody = {
+  productId: string;
+  action: TrackProductInteractionBodyAction;
+};
+
+export type GetPlatformFaqs200 = {
+  faqs?: FaqEntry[];
+};
+
+export type CancelPharmacyOrderBody = {
+  reason?: string;
+};
+
+export type CancelParcelBookingBody = {
+  reason?: string;
 };
 
 export type GeocodeAddressParams = {
@@ -667,14 +1607,112 @@ export type SubscribeSchoolRoute200 = {
   subscriptionId?: string;
 };
 
-export type GetCategoriesParams = {
-  type?: GetCategoriesType;
+export type GetVendorOrdersParams = {
+  status?: string;
+  limit?: number;
+  after?: string;
 };
 
-export type GetCategoriesType =
-  (typeof GetCategoriesType)[keyof typeof GetCategoriesType];
+export type GetVendorProductsParams = {
+  status?: string;
+  limit?: number;
+  after?: string;
+};
 
-export const GetCategoriesType = {
-  mart: "mart",
-  food: "food",
+export type GetVendorWalletTransactionsParams = {
+  limit?: number;
+  after?: string;
+};
+
+export type VendorWalletWithdraw200 = {
+  message?: string;
+};
+
+export type GetVendorAnalyticsParams = {
+  period?: GetVendorAnalyticsPeriod;
+};
+
+export type GetVendorAnalyticsPeriod =
+  (typeof GetVendorAnalyticsPeriod)[keyof typeof GetVendorAnalyticsPeriod];
+
+export const GetVendorAnalyticsPeriod = {
+  day: "day",
+  week: "week",
+  month: "month",
 } as const;
+
+export type SetRiderOnlineStatusBody = {
+  online: boolean;
+};
+
+export type SetRiderOnlineStatus200 = {
+  online?: boolean;
+};
+
+export type RiderRejectOrderBody = {
+  reason?: string;
+};
+
+export type UpdateRiderOrderStatusBodyStatus =
+  (typeof UpdateRiderOrderStatusBodyStatus)[keyof typeof UpdateRiderOrderStatusBodyStatus];
+
+export const UpdateRiderOrderStatusBodyStatus = {
+  picked_up: "picked_up",
+  out_for_delivery: "out_for_delivery",
+  delivered: "delivered",
+} as const;
+
+export type UpdateRiderOrderStatusBody = {
+  status: UpdateRiderOrderStatusBodyStatus;
+};
+
+export type RiderAcceptRideBody = {
+  fare?: number;
+};
+
+export type RiderVerifyRideOtpBody = {
+  otp: string;
+};
+
+export type UpdateRiderRideStatusBodyStatus =
+  (typeof UpdateRiderRideStatusBodyStatus)[keyof typeof UpdateRiderRideStatusBodyStatus];
+
+export const UpdateRiderRideStatusBodyStatus = {
+  in_progress: "in_progress",
+  completed: "completed",
+} as const;
+
+export type UpdateRiderRideStatusBody = {
+  status: UpdateRiderRideStatusBodyStatus;
+};
+
+export type RiderCounterOfferBody = {
+  fare: number;
+};
+
+export type GetRiderHistoryParams = {
+  limit?: number;
+  after?: string;
+};
+
+export type GetRiderEarningsParams = {
+  period?: GetRiderEarningsPeriod;
+};
+
+export type GetRiderEarningsPeriod =
+  (typeof GetRiderEarningsPeriod)[keyof typeof GetRiderEarningsPeriod];
+
+export const GetRiderEarningsPeriod = {
+  today: "today",
+  week: "week",
+  month: "month",
+} as const;
+
+export type GetRiderWalletTransactionsParams = {
+  limit?: number;
+  after?: string;
+};
+
+export type RiderWalletWithdraw200 = {
+  message?: string;
+};

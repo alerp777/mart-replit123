@@ -5,11 +5,10 @@
  * AJKMart Super App API
  * OpenAPI spec version: 0.1.0
  */
-import type { SchoolSubscribeRequestPaymentMethod } from "./schoolSubscribeRequestPaymentMethod";
 
 export interface SchoolSubscribeRequest {
   routeId: string;
   studentName: string;
-  studentClass: string;
-  paymentMethod: SchoolSubscribeRequestPaymentMethod;
+  grade?: string;
+  parentPhone?: string;
 }

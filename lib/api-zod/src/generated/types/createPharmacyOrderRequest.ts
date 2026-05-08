@@ -5,13 +5,13 @@
  * AJKMart Super App API
  * OpenAPI spec version: 0.1.0
  */
+import type { CreatePharmacyOrderRequestItemsItem } from "./createPharmacyOrderRequestItemsItem";
 import type { CreatePharmacyOrderRequestPaymentMethod } from "./createPharmacyOrderRequestPaymentMethod";
-import type { PharmacyOrderItem } from "./pharmacyOrderItem";
 
 export interface CreatePharmacyOrderRequest {
-  items: PharmacyOrderItem[];
-  prescriptionNote?: string | null;
+  items?: CreatePharmacyOrderRequestItemsItem[];
+  prescriptionUrl?: string;
   deliveryAddress: string;
-  contactPhone: string;
   paymentMethod: CreatePharmacyOrderRequestPaymentMethod;
+  note?: string;
 }

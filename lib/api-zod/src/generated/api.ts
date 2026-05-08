@@ -15,10 +15,57 @@ export const HealthCheckResponse = zod.object({
 });
 
 /**
+ * @summary Get enabled auth methods and OTP bypass status
+ */
+export const GetAuthConfigResponse = zod.object({
+  auth_mode: zod.string(),
+  firebase_enabled: zod.string().optional(),
+  auth_otp_enabled: zod.string().optional(),
+  auth_email_enabled: zod.string().optional(),
+  auth_google_enabled: zod.string().optional(),
+  auth_facebook_enabled: zod.string().optional(),
+  otpBypassActive: zod.boolean(),
+  otpBypassExpiresAt: zod.string().nullish(),
+  bypassMessage: zod.string().nullish(),
+});
+
+/**
+ * @summary Check per-phone OTP bypass status
+ */
+export const GetOtpStatusQueryParams = zod.object({
+  phone: zod.coerce.string(),
+});
+
+export const GetOtpStatusResponse = zod.object({
+  bypassActive: zod.boolean(),
+  bypassExpiresAt: zod.string().nullish(),
+  message: zod.string().nullish(),
+});
+
+/**
+ * @summary Account discovery — determine next login action
+ */
+export const CheckIdentifierBody = zod.object({
+  identifier: zod.string(),
+  role: zod.enum(["customer", "rider", "vendor"]).optional(),
+  deviceId: zod.string().optional(),
+});
+
+export const CheckIdentifierResponse = zod.object({
+  action: zod.string(),
+  availableMethods: zod.array(zod.string()),
+  isBanned: zod.boolean().optional(),
+  isLocked: zod.boolean().optional(),
+  lockedMinutes: zod.number().optional(),
+});
+
+/**
  * @summary Send OTP to phone number
  */
 export const SendOtpBody = zod.object({
   phone: zod.string(),
+  role: zod.enum(["customer", "rider", "vendor"]).optional(),
+  preferredChannel: zod.enum(["whatsapp", "sms", "email"]).optional(),
 });
 
 export const SendOtpResponse = zod.object({
@@ -32,10 +79,12 @@ export const SendOtpResponse = zod.object({
 export const VerifyOtpBody = zod.object({
   phone: zod.string(),
   otp: zod.string(),
+  role: zod.enum(["customer", "rider", "vendor"]).optional(),
 });
 
 export const VerifyOtpResponse = zod.object({
   token: zod.string(),
+  refreshToken: zod.string().optional(),
   user: zod.object({
     id: zod.string(),
     phone: zod.string(),
@@ -47,6 +96,364 @@ export const VerifyOtpResponse = zod.object({
     isActive: zod.boolean(),
     createdAt: zod.string(),
   }),
+});
+
+/**
+ * @summary Send OTP to email address
+ */
+export const SendEmailOtpBody = zod.object({
+  email: zod.string().email(),
+});
+
+export const SendEmailOtpResponse = zod.object({
+  message: zod.string(),
+  otp: zod.string().optional().describe("Dev only - OTP for testing"),
+});
+
+/**
+ * @summary Verify email OTP
+ */
+export const VerifyEmailOtpBody = zod.object({
+  email: zod.string().email(),
+  otp: zod.string(),
+});
+
+export const VerifyEmailOtpResponse = zod.object({
+  token: zod.string(),
+  refreshToken: zod.string().optional(),
+  user: zod.object({
+    id: zod.string(),
+    phone: zod.string(),
+    name: zod.string().optional(),
+    email: zod.string().optional(),
+    role: zod.enum(["customer", "rider", "vendor"]),
+    avatar: zod.string().optional(),
+    walletBalance: zod.number(),
+    isActive: zod.boolean(),
+    createdAt: zod.string(),
+  }),
+});
+
+/**
+ * @summary Register with phone and password
+ */
+export const RegisterBody = zod.object({
+  phone: zod.string(),
+  password: zod.string(),
+  name: zod.string().optional(),
+  role: zod.enum(["customer", "rider", "vendor"]).optional(),
+  email: zod.string().email().optional(),
+  username: zod.string().optional(),
+  businessName: zod.string().optional(),
+  storeName: zod.string().optional(),
+  vehicleType: zod.string().optional(),
+  vehiclePlate: zod.string().optional(),
+});
+
+/**
+ * @summary Login with username/phone/email and password
+ */
+export const LoginBody = zod.object({
+  identifier: zod.string().optional(),
+  username: zod.string().optional(),
+  password: zod.string(),
+  role: zod.enum(["customer", "rider", "vendor"]).optional(),
+});
+
+export const LoginResponse = zod.object({
+  token: zod.string(),
+  refreshToken: zod.string().optional(),
+  user: zod.object({
+    id: zod.string(),
+    phone: zod.string(),
+    name: zod.string().optional(),
+    email: zod.string().optional(),
+    role: zod.enum(["customer", "rider", "vendor"]),
+    avatar: zod.string().optional(),
+    walletBalance: zod.number(),
+    isActive: zod.boolean(),
+    createdAt: zod.string(),
+  }),
+});
+
+/**
+ * @summary Login with username and password (alias)
+ */
+export const LoginUsernameBody = zod.object({
+  identifier: zod.string().optional(),
+  username: zod.string().optional(),
+  password: zod.string(),
+  role: zod.enum(["customer", "rider", "vendor"]).optional(),
+});
+
+export const LoginUsernameResponse = zod.object({
+  token: zod.string(),
+  refreshToken: zod.string().optional(),
+  user: zod.object({
+    id: zod.string(),
+    phone: zod.string(),
+    name: zod.string().optional(),
+    email: zod.string().optional(),
+    role: zod.enum(["customer", "rider", "vendor"]),
+    avatar: zod.string().optional(),
+    walletBalance: zod.number(),
+    isActive: zod.boolean(),
+    createdAt: zod.string(),
+  }),
+});
+
+/**
+ * @summary Refresh access token
+ */
+export const RefreshTokenBody = zod.object({
+  refreshToken: zod.string().optional(),
+});
+
+export const RefreshTokenResponse = zod.object({
+  token: zod.string(),
+  refreshToken: zod.string().optional(),
+});
+
+/**
+ * @summary Logout and invalidate tokens
+ */
+export const LogoutResponse = zod.object({
+  message: zod.string().optional(),
+});
+
+/**
+ * @summary Validate JWT access token
+ */
+export const ValidateTokenResponse = zod.object({
+  valid: zod.boolean().optional(),
+  user: zod
+    .object({
+      id: zod.string(),
+      phone: zod.string(),
+      name: zod.string().optional(),
+      email: zod.string().optional(),
+      role: zod.enum(["customer", "rider", "vendor"]),
+      avatar: zod.string().optional(),
+      walletBalance: zod.number(),
+      isActive: zod.boolean(),
+      createdAt: zod.string(),
+    })
+    .optional(),
+});
+
+/**
+ * @summary Request password reset OTP
+ */
+export const ForgotPasswordBody = zod.object({
+  phone: zod.string().optional(),
+  email: zod.string().email().optional(),
+  identifier: zod.string().optional(),
+});
+
+export const ForgotPasswordResponse = zod.object({
+  message: zod.string(),
+  otp: zod.string().optional().describe("Dev only - OTP for testing"),
+});
+
+/**
+ * @summary Reset password with OTP
+ */
+export const ResetPasswordBody = zod.object({
+  phone: zod.string().optional(),
+  otp: zod.string(),
+  newPassword: zod.string(),
+});
+
+export const ResetPasswordResponse = zod.object({
+  message: zod.string().optional(),
+});
+
+/**
+ * @summary Set password for OTP-only account
+ */
+export const SetPasswordBody = zod.object({
+  password: zod.string(),
+});
+
+export const SetPasswordResponse = zod.object({
+  message: zod.string().optional(),
+});
+
+/**
+ * @summary Sign in with Google ID token
+ */
+export const GoogleSignInBody = zod.object({
+  token: zod.string(),
+  role: zod.enum(["customer", "rider", "vendor"]).optional(),
+});
+
+export const GoogleSignInResponse = zod.object({
+  token: zod.string(),
+  refreshToken: zod.string().optional(),
+  user: zod.object({
+    id: zod.string(),
+    phone: zod.string(),
+    name: zod.string().optional(),
+    email: zod.string().optional(),
+    role: zod.enum(["customer", "rider", "vendor"]),
+    avatar: zod.string().optional(),
+    walletBalance: zod.number(),
+    isActive: zod.boolean(),
+    createdAt: zod.string(),
+  }),
+});
+
+/**
+ * @summary Sign in with Facebook access token
+ */
+export const FacebookSignInBody = zod.object({
+  token: zod.string(),
+  role: zod.enum(["customer", "rider", "vendor"]).optional(),
+});
+
+export const FacebookSignInResponse = zod.object({
+  token: zod.string(),
+  refreshToken: zod.string().optional(),
+  user: zod.object({
+    id: zod.string(),
+    phone: zod.string(),
+    name: zod.string().optional(),
+    email: zod.string().optional(),
+    role: zod.enum(["customer", "rider", "vendor"]),
+    avatar: zod.string().optional(),
+    walletBalance: zod.number(),
+    isActive: zod.boolean(),
+    createdAt: zod.string(),
+  }),
+});
+
+/**
+ * @summary Send magic link to email
+ */
+export const SendMagicLinkBody = zod.object({
+  email: zod.string().email(),
+});
+
+export const SendMagicLinkResponse = zod.object({
+  message: zod.string(),
+  otp: zod.string().optional().describe("Dev only - OTP for testing"),
+});
+
+/**
+ * @summary Verify magic link token
+ */
+export const VerifyMagicLinkBody = zod.object({
+  token: zod.string(),
+});
+
+export const VerifyMagicLinkResponse = zod.object({
+  token: zod.string(),
+  refreshToken: zod.string().optional(),
+  user: zod.object({
+    id: zod.string(),
+    phone: zod.string(),
+    name: zod.string().optional(),
+    email: zod.string().optional(),
+    role: zod.enum(["customer", "rider", "vendor"]),
+    avatar: zod.string().optional(),
+    walletBalance: zod.number(),
+    isActive: zod.boolean(),
+    createdAt: zod.string(),
+  }),
+});
+
+/**
+ * @summary Verify TOTP 2FA code
+ */
+export const VerifyTwoFaBody = zod.object({
+  challengeToken: zod.string(),
+  code: zod.string(),
+});
+
+export const VerifyTwoFaResponse = zod.object({
+  token: zod.string(),
+  refreshToken: zod.string().optional(),
+  user: zod.object({
+    id: zod.string(),
+    phone: zod.string(),
+    name: zod.string().optional(),
+    email: zod.string().optional(),
+    role: zod.enum(["customer", "rider", "vendor"]),
+    avatar: zod.string().optional(),
+    walletBalance: zod.number(),
+    isActive: zod.boolean(),
+    createdAt: zod.string(),
+  }),
+});
+
+/**
+ * @summary Get TOTP setup details (QR code + secret)
+ */
+export const GetTwoFaSetupResponse = zod.object({
+  secret: zod.string(),
+  qrCodeUrl: zod.string(),
+  uri: zod.string().optional(),
+});
+
+/**
+ * @summary Confirm TOTP setup with first code
+ */
+export const VerifyTwoFaSetupBody = zod.object({
+  token: zod.string(),
+});
+
+export const VerifyTwoFaSetupResponse = zod.object({
+  message: zod.string().optional(),
+  recoveryCodes: zod.array(zod.string()).optional(),
+});
+
+/**
+ * @summary Get recent login history
+ */
+export const GetLoginHistoryResponse = zod.object({
+  entries: zod.array(
+    zod.object({
+      id: zod.string(),
+      ip: zod.string().optional(),
+      userAgent: zod.string().optional(),
+      createdAt: zod.string(),
+      success: zod.boolean(),
+    }),
+  ),
+});
+
+/**
+ * @summary List active sessions
+ */
+export const GetSessionsResponse = zod.object({
+  sessions: zod.array(
+    zod.object({
+      id: zod.string(),
+      userAgent: zod.string().optional(),
+      ip: zod.string().optional(),
+      createdAt: zod.string(),
+      lastUsedAt: zod.string().optional(),
+      isCurrent: zod.boolean().optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Revoke all sessions except current
+ */
+export const RevokeAllSessionsResponse = zod.object({
+  message: zod.string().optional(),
+});
+
+/**
+ * @summary Revoke a specific session
+ */
+export const RevokeSessionParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const RevokeSessionResponse = zod.object({
+  message: zod.string().optional(),
 });
 
 /**
@@ -88,6 +495,64 @@ export const UpdateProfileResponse = zod.object({
   walletBalance: zod.number(),
   isActive: zod.boolean(),
   createdAt: zod.string(),
+});
+
+/**
+ * @summary Get current cart snapshot
+ */
+export const GetCartSnapshotResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      productId: zod.string(),
+      name: zod.string(),
+      price: zod.number(),
+      quantity: zod.number(),
+      image: zod.string().optional(),
+    }),
+  ),
+  vendorId: zod.string().optional(),
+  serviceType: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Save (upsert) cart snapshot
+ */
+export const SaveCartSnapshotBody = zod.object({
+  items: zod.array(
+    zod.object({
+      productId: zod.string(),
+      name: zod.string(),
+      price: zod.number(),
+      quantity: zod.number(),
+      image: zod.string().optional(),
+    }),
+  ),
+  vendorId: zod.string().optional(),
+  serviceType: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+export const SaveCartSnapshotResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      productId: zod.string(),
+      name: zod.string(),
+      price: zod.number(),
+      quantity: zod.number(),
+      image: zod.string().optional(),
+    }),
+  ),
+  vendorId: zod.string().optional(),
+  serviceType: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+
+/**
+ * @summary Clear cart
+ */
+export const ClearCartSnapshotResponse = zod.object({
+  message: zod.string().optional(),
 });
 
 /**
@@ -162,6 +627,25 @@ export const GetProductResponse = zod.object({
   inStock: zod.boolean(),
   unit: zod.string().optional(),
   deliveryTime: zod.string().optional(),
+});
+
+/**
+ * @summary Get product categories
+ */
+export const GetCategoriesQueryParams = zod.object({
+  type: zod.enum(["mart", "food"]).optional(),
+});
+
+export const GetCategoriesResponse = zod.object({
+  categories: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod.enum(["mart", "food"]),
+      image: zod.string().optional(),
+      parentId: zod.string().nullish(),
+    }),
+  ),
 });
 
 /**
@@ -330,7 +814,7 @@ export const GetWalletResponse = zod.object({
 });
 
 /**
- * @summary Top up wallet balance
+ * @summary Top up wallet balance (admin)
  */
 export const TopUpWalletBody = zod.object({
   userId: zod.string(),
@@ -348,6 +832,166 @@ export const TopUpWalletResponse = zod.object({
       createdAt: zod.string(),
     }),
   ),
+});
+
+/**
+ * @summary Request a wallet deposit (bank transfer/JazzCash/EasyPaisa)
+ */
+export const WalletDepositBody = zod.object({
+  amount: zod.number(),
+  paymentMethod: zod.string(),
+  transactionId: zod.string(),
+  idempotencyKey: zod.string(),
+  accountNumber: zod.string().optional(),
+  note: zod.string().optional(),
+});
+
+export const WalletDepositResponse = zod.object({
+  message: zod.string(),
+  depositId: zod.string().optional(),
+  status: zod.string().optional(),
+});
+
+/**
+ * @summary List wallet deposit history
+ */
+export const GetWalletDepositsResponse = zod.object({
+  deposits: zod.array(
+    zod.object({
+      id: zod.string(),
+      amount: zod.number(),
+      paymentMethod: zod.string(),
+      status: zod.enum(["pending", "approved", "rejected"]),
+      transactionId: zod.string().optional(),
+      createdAt: zod.string(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary Get available wallet deposit methods
+ */
+export const GetWalletDepositMethodsResponse = zod.object({
+  methods: zod.array(
+    zod.object({
+      id: zod.string(),
+      label: zod.string(),
+      description: zod.string().optional(),
+      minAmount: zod.number().optional(),
+      maxAmount: zod.number().optional(),
+      fee: zod.number().optional(),
+      logo: zod.string().optional(),
+      available: zod.boolean(),
+    }),
+  ),
+});
+
+/**
+ * @summary Get available wallet withdrawal methods
+ */
+export const GetWalletWithdrawalMethodsResponse = zod.object({
+  methods: zod.array(
+    zod.object({
+      id: zod.string(),
+      label: zod.string(),
+      description: zod.string().optional(),
+      minAmount: zod.number().optional(),
+      maxAmount: zod.number().optional(),
+      fee: zod.number().optional(),
+      logo: zod.string().optional(),
+      available: zod.boolean(),
+    }),
+  ),
+});
+
+/**
+ * @summary Withdraw from wallet
+ */
+export const WalletWithdrawBody = zod.object({
+  amount: zod.number(),
+  method: zod.string(),
+  accountNumber: zod.string(),
+  accountTitle: zod.string().optional(),
+  note: zod.string().optional(),
+});
+
+export const WalletWithdrawResponse = zod.object({
+  message: zod.string().optional(),
+  withdrawalId: zod.string().optional(),
+});
+
+/**
+ * @summary Look up wallet holder by phone for P2P transfer
+ */
+export const ResolveWalletPhoneBody = zod.object({
+  phone: zod.string(),
+});
+
+export const ResolveWalletPhoneResponse = zod.object({
+  name: zod.string(),
+  phone: zod.string(),
+  avatar: zod.string().optional(),
+});
+
+/**
+ * @summary Send money to another user
+ */
+export const WalletSendBody = zod.object({
+  receiverPhone: zod.string().optional(),
+  ajkId: zod.string().optional(),
+  amount: zod.number(),
+  note: zod.string().optional(),
+});
+
+export const WalletSendResponse = zod.object({
+  message: zod.string().optional(),
+  newBalance: zod.number().optional(),
+});
+
+/**
+ * @summary Set up wallet PIN
+ */
+export const SetupWalletPinBody = zod.object({
+  pin: zod.string(),
+});
+
+export const SetupWalletPinResponse = zod.object({
+  message: zod.string().optional(),
+});
+
+/**
+ * @summary Verify wallet PIN
+ */
+export const VerifyWalletPinBody = zod.object({
+  pin: zod.string(),
+});
+
+export const VerifyWalletPinResponse = zod.object({
+  valid: zod.boolean().optional(),
+});
+
+/**
+ * @summary Change wallet PIN
+ */
+export const ChangeWalletPinBody = zod.object({
+  currentPin: zod.string(),
+  newPin: zod.string(),
+});
+
+export const ChangeWalletPinResponse = zod.object({
+  message: zod.string().optional(),
+});
+
+/**
+ * @summary Toggle wallet balance visibility
+ */
+export const UpdateWalletVisibilityBody = zod.object({
+  hidden: zod.boolean(),
+});
+
+export const UpdateWalletVisibilityResponse = zod.object({
+  hidden: zod.boolean().optional(),
 });
 
 /**
@@ -800,99 +1444,725 @@ export const GetRideHistoryResponse = zod.object({
         ),
     }),
   ),
+  total: zod.number(),
+});
+
+/**
+ * @summary Get user notifications
+ */
+export const GetNotificationsQueryParams = zod.object({
+  limit: zod.coerce.number().optional(),
+  after: zod.coerce.string().optional(),
+});
+
+export const GetNotificationsResponse = zod.object({
+  notifications: zod.array(
+    zod.object({
+      id: zod.string(),
+      title: zod.string(),
+      body: zod.string(),
+      type: zod.string().optional(),
+      data: zod.record(zod.string(), zod.unknown()).optional(),
+      isRead: zod.boolean(),
+      createdAt: zod.string(),
+    }),
+  ),
+  unreadCount: zod.number(),
+  total: zod.number(),
+});
+
+/**
+ * @summary Mark all notifications as read
+ */
+export const MarkAllNotificationsReadResponse = zod.object({
+  message: zod.string().optional(),
+});
+
+/**
+ * @summary Mark a notification as read
+ */
+export const MarkNotificationReadParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * @summary Delete a notification
+ */
+export const DeleteNotificationParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * @summary List saved delivery addresses
+ */
+export const GetAddressesResponse = zod.object({
+  addresses: zod.array(
+    zod.object({
+      id: zod.string(),
+      label: zod.string().optional(),
+      address: zod.string(),
+      lat: zod.number().optional(),
+      lng: zod.number().optional(),
+      isDefault: zod.boolean(),
+      city: zod.string().optional(),
+      createdAt: zod.string(),
+    }),
+  ),
+});
+
+/**
+ * @summary Add a new delivery address
+ */
+export const CreateAddressBody = zod.object({
+  label: zod.string().optional(),
+  address: zod.string(),
+  lat: zod.number().optional(),
+  lng: zod.number().optional(),
+  isDefault: zod.boolean().optional(),
+  city: zod.string().optional(),
+});
+
+/**
+ * @summary Update an address
+ */
+export const UpdateAddressParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateAddressBody = zod.object({
+  label: zod.string().optional(),
+  address: zod.string(),
+  lat: zod.number().optional(),
+  lng: zod.number().optional(),
+  isDefault: zod.boolean().optional(),
+  city: zod.string().optional(),
+});
+
+export const UpdateAddressResponse = zod.object({
+  id: zod.string(),
+  label: zod.string().optional(),
+  address: zod.string(),
+  lat: zod.number().optional(),
+  lng: zod.number().optional(),
+  isDefault: zod.boolean(),
+  city: zod.string().optional(),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Delete an address
+ */
+export const DeleteAddressParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * @summary Set address as default delivery address
+ */
+export const SetDefaultAddressParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const SetDefaultAddressResponse = zod.object({
+  id: zod.string(),
+  label: zod.string().optional(),
+  address: zod.string(),
+  lat: zod.number().optional(),
+  lng: zod.number().optional(),
+  isDefault: zod.boolean(),
+  city: zod.string().optional(),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Get reviews for a product
+ */
+export const GetProductReviewsParams = zod.object({
+  productId: zod.coerce.string(),
+});
+
+export const GetProductReviewsQueryParams = zod.object({
+  limit: zod.coerce.number().optional(),
+  after: zod.coerce.string().optional(),
+});
+
+export const GetProductReviewsResponse = zod.object({
+  reviews: zod.array(
+    zod.object({
+      id: zod.string(),
+      productId: zod.string(),
+      userId: zod.string(),
+      userName: zod.string().optional(),
+      rating: zod.number(),
+      comment: zod.string().optional(),
+      images: zod.array(zod.string()).optional(),
+      createdAt: zod.string(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary Get review summary (average rating, count) for a product
+ */
+export const GetProductReviewSummaryParams = zod.object({
+  productId: zod.coerce.string(),
+});
+
+export const GetProductReviewSummaryResponse = zod.object({
+  averageRating: zod.number(),
+  totalReviews: zod.number(),
+  ratingBreakdown: zod.record(zod.string(), zod.number()).optional(),
+});
+
+/**
+ * @summary Check whether the current user can review a product
+ */
+export const CheckCanReviewParams = zod.object({
+  productId: zod.coerce.string(),
+});
+
+export const CheckCanReviewResponse = zod.object({
+  canReview: zod.boolean().optional(),
+});
+
+/**
+ * @summary Submit a product review
+ */
+export const SubmitReviewBody = zod.object({
+  productId: zod.string(),
+  orderId: zod.string().optional(),
+  rating: zod.number(),
+  comment: zod.string().optional(),
+  images: zod.array(zod.string()).optional(),
+});
+
+/**
+ * @summary Get user's referral code and stats
+ */
+export const GetMyReferralCodeResponse = zod.object({
+  code: zod.string(),
+  totalReferrals: zod.number(),
+  totalEarned: zod.number(),
+  pendingBonus: zod.number().optional(),
+});
+
+/**
+ * @summary Apply a referral code
+ */
+export const ApplyReferralCodeBody = zod.object({
+  code: zod.string(),
+});
+
+export const ApplyReferralCodeResponse = zod.object({
+  message: zod.string().optional(),
+  bonus: zod.number().optional(),
+});
+
+/**
+ * @summary Get loyalty points balance
+ */
+export const GetLoyaltyBalanceResponse = zod.object({
+  points: zod.number(),
+  valueInCurrency: zod.number(),
+  tier: zod.string().optional(),
+  nextTierPoints: zod.number().optional(),
+});
+
+/**
+ * @summary Redeem loyalty points for wallet credit
+ */
+export const RedeemLoyaltyPointsBody = zod.object({
+  points: zod.number(),
+});
+
+export const RedeemLoyaltyPointsResponse = zod.object({
+  message: zod.string().optional(),
+  pointsUsed: zod.number().optional(),
+  walletCredit: zod.number().optional(),
+});
+
+/**
+ * @summary Get KYC verification status
+ */
+export const GetKycStatusResponse = zod.object({
+  status: zod.enum(["not_submitted", "pending", "approved", "rejected"]),
+  submittedAt: zod.string().optional(),
+  reviewedAt: zod.string().optional(),
+  rejectionReason: zod.string().optional(),
+});
+
+/**
+ * @summary Submit KYC documents
+ */
+export const SubmitKycBody = zod.object({
+  cnicFront: zod.string(),
+  cnicBack: zod.string(),
+  selfie: zod.string(),
+  cnicNumber: zod.string().optional(),
+});
+
+export const SubmitKycResponse = zod.object({
+  status: zod.enum(["not_submitted", "pending", "approved", "rejected"]),
+  submittedAt: zod.string().optional(),
+  reviewedAt: zod.string().optional(),
+  rejectionReason: zod.string().optional(),
+});
+
+/**
+ * @summary Get VAPID public key for web push subscription
+ */
+export const GetPushVapidKeyResponse = zod.object({
+  publicKey: zod.string().optional(),
+});
+
+/**
+ * @summary Subscribe to web push notifications
+ */
+export const SubscribePushBody = zod.object({
+  endpoint: zod.string(),
+  keys: zod.object({
+    p256dh: zod.string(),
+    auth: zod.string(),
+  }),
+  userAgent: zod.string().optional(),
+});
+
+export const SubscribePushResponse = zod.object({
+  message: zod.string().optional(),
+});
+
+/**
+ * @summary Unsubscribe from web push notifications
+ */
+export const UnsubscribePushBody = zod.object({
+  endpoint: zod.string(),
+});
+
+/**
+ * @summary Trigger an SOS alert
+ */
+export const TriggerSosBody = zod.object({
+  lat: zod.number(),
+  lng: zod.number(),
+  rideId: zod.string().optional(),
+  message: zod.string().optional(),
+});
+
+export const TriggerSosResponse = zod.object({
+  alertId: zod.string(),
+  message: zod.string(),
+});
+
+/**
+ * @summary Get support chat messages
+ */
+export const GetSupportMessagesQueryParams = zod.object({
+  limit: zod.coerce.number().optional(),
+  after: zod.coerce.string().optional(),
+});
+
+export const GetSupportMessagesResponse = zod.object({
+  messages: zod.array(
+    zod.object({
+      id: zod.string(),
+      content: zod.string(),
+      type: zod.enum(["text", "image", "audio", "location"]),
+      senderRole: zod.enum(["customer", "support"]),
+      createdAt: zod.string(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary Send a support chat message
+ */
+export const SendSupportMessageBody = zod.object({
+  content: zod.string(),
+  type: zod.enum(["text", "image", "audio", "location"]).optional(),
+});
+
+/**
+ * @summary Check delivery eligibility for an address
+ */
+export const GetDeliveryEligibilityQueryParams = zod.object({
+  lat: zod.coerce.number().optional(),
+  lng: zod.coerce.number().optional(),
+  address: zod.coerce.string().optional(),
+});
+
+export const GetDeliveryEligibilityResponse = zod.object({
+  eligible: zod.boolean(),
+  reason: zod.string().optional(),
+  estimatedTime: zod.string().optional(),
+  deliveryFee: zod.number().optional(),
+});
+
+/**
+ * @summary Get active public promotions
+ */
+export const GetPublicPromotionsResponse = zod.object({
+  promotions: zod.array(
+    zod.object({
+      id: zod.string(),
+      code: zod.string().optional(),
+      title: zod.string(),
+      description: zod.string().optional(),
+      discountType: zod.enum(["percentage", "fixed"]),
+      discountValue: zod.number(),
+      minOrderAmount: zod.number().optional(),
+      maxDiscount: zod.number().optional(),
+      expiresAt: zod.string().optional(),
+      bannerImage: zod.string().optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Get personalized promotions for the current user
+ */
+export const GetPersonalizedPromotionsResponse = zod.object({
+  promotions: zod.array(
+    zod.object({
+      id: zod.string(),
+      code: zod.string().optional(),
+      title: zod.string(),
+      description: zod.string().optional(),
+      discountType: zod.enum(["percentage", "fixed"]),
+      discountValue: zod.number(),
+      minOrderAmount: zod.number().optional(),
+      maxDiscount: zod.number().optional(),
+      expiresAt: zod.string().optional(),
+      bannerImage: zod.string().optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Validate a promo code for an order
+ */
+export const ValidatePromoCodeBody = zod.object({
+  code: zod.string(),
+  orderAmount: zod.number(),
+  vendorId: zod.string().optional(),
+});
+
+export const ValidatePromoCodeResponse = zod.object({
+  valid: zod.boolean(),
+  discount: zod.number().optional(),
+  finalAmount: zod.number().optional(),
+  promotion: zod
+    .object({
+      id: zod.string(),
+      code: zod.string().optional(),
+      title: zod.string(),
+      description: zod.string().optional(),
+      discountType: zod.enum(["percentage", "fixed"]),
+      discountValue: zod.number(),
+      minOrderAmount: zod.number().optional(),
+      maxDiscount: zod.number().optional(),
+      expiresAt: zod.string().optional(),
+      bannerImage: zod.string().optional(),
+    })
+    .optional(),
+  message: zod.string().optional(),
+});
+
+/**
+ * @summary Auto-apply best available promo to an order
+ */
+export const AutoApplyPromoBody = zod.object({
+  code: zod.string(),
+  orderAmount: zod.number(),
+  vendorId: zod.string().optional(),
+});
+
+export const AutoApplyPromoResponse = zod.object({
+  valid: zod.boolean(),
+  discount: zod.number().optional(),
+  finalAmount: zod.number().optional(),
+  promotion: zod
+    .object({
+      id: zod.string(),
+      code: zod.string().optional(),
+      title: zod.string(),
+      description: zod.string().optional(),
+      discountType: zod.enum(["percentage", "fixed"]),
+      discountValue: zod.number(),
+      minOrderAmount: zod.number().optional(),
+      maxDiscount: zod.number().optional(),
+      expiresAt: zod.string().optional(),
+      bannerImage: zod.string().optional(),
+    })
+    .optional(),
+  message: zod.string().optional(),
+});
+
+/**
+ * @summary Get home-screen banners
+ */
+export const GetBannersQueryParams = zod.object({
+  type: zod.coerce.string().optional(),
+});
+
+export const GetBannersResponse = zod.object({
+  banners: zod.array(
+    zod.object({
+      id: zod.string(),
+      title: zod.string().optional(),
+      imageUrl: zod.string(),
+      linkUrl: zod.string().optional(),
+      type: zod.string().optional(),
+      position: zod.number().optional(),
+      isActive: zod.boolean(),
+    }),
+  ),
+});
+
+/**
+ * @summary Get trending products
+ */
+export const GetTrendingProductsQueryParams = zod.object({
+  limit: zod.coerce.number().optional(),
+});
+
+export const GetTrendingProductsResponse = zod.object({
+  products: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      description: zod.string().optional(),
+      price: zod.number(),
+      originalPrice: zod.number().optional(),
+      category: zod.string(),
+      type: zod.enum(["mart", "food"]),
+      image: zod.string().optional(),
+      videoUrl: zod.string().nullish(),
+      vendorId: zod.string().optional(),
+      vendorName: zod.string().optional(),
+      rating: zod.number().optional(),
+      reviewCount: zod.number().optional(),
+      inStock: zod.boolean(),
+      unit: zod.string().optional(),
+      deliveryTime: zod.string().optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Get personalised recommendations
+ */
+export const GetForYouRecommendationsResponse = zod.object({
+  products: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      description: zod.string().optional(),
+      price: zod.number(),
+      originalPrice: zod.number().optional(),
+      category: zod.string(),
+      type: zod.enum(["mart", "food"]),
+      image: zod.string().optional(),
+      videoUrl: zod.string().nullish(),
+      vendorId: zod.string().optional(),
+      vendorName: zod.string().optional(),
+      rating: zod.number().optional(),
+      reviewCount: zod.number().optional(),
+      inStock: zod.boolean(),
+      unit: zod.string().optional(),
+      deliveryTime: zod.string().optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Get products similar to a given product
+ */
+export const GetSimilarProductsParams = zod.object({
+  productId: zod.coerce.string(),
+});
+
+export const GetSimilarProductsResponse = zod.object({
+  products: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      description: zod.string().optional(),
+      price: zod.number(),
+      originalPrice: zod.number().optional(),
+      category: zod.string(),
+      type: zod.enum(["mart", "food"]),
+      image: zod.string().optional(),
+      videoUrl: zod.string().nullish(),
+      vendorId: zod.string().optional(),
+      vendorName: zod.string().optional(),
+      rating: zod.number().optional(),
+      reviewCount: zod.number().optional(),
+      inStock: zod.boolean(),
+      unit: zod.string().optional(),
+      deliveryTime: zod.string().optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Track a product interaction (view/click/purchase)
+ */
+export const TrackProductInteractionBody = zod.object({
+  productId: zod.string(),
+  action: zod.enum(["view", "click", "purchase", "wishlist"]),
+});
+
+/**
+ * @summary Get platform configuration and feature flags
+ */
+export const GetPlatformConfigResponse = zod
+  .record(zod.string(), zod.string())
+  .describe("Key-value map of platform settings");
+
+/**
+ * @summary Get FAQ entries
+ */
+export const GetPlatformFaqsResponse = zod.object({
+  faqs: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        question: zod.string(),
+        answer: zod.string(),
+        category: zod.string().optional(),
+      }),
+    )
+    .optional(),
+});
+
+/**
+ * @summary List user pharmacy orders
+ */
+export const GetPharmacyOrdersResponse = zod.object({
+  orders: zod.array(
+    zod.object({
+      id: zod.string(),
+      userId: zod.string(),
+      items: zod
+        .array(
+          zod.object({
+            name: zod.string(),
+            quantity: zod.number(),
+            price: zod.number().optional(),
+          }),
+        )
+        .optional(),
+      prescriptionUrl: zod.string().optional(),
+      status: zod.enum([
+        "pending",
+        "confirmed",
+        "preparing",
+        "out_for_delivery",
+        "delivered",
+        "cancelled",
+      ]),
+      total: zod.number().optional(),
+      deliveryAddress: zod.string().optional(),
+      paymentMethod: zod.string().optional(),
+      note: zod.string().optional(),
+      createdAt: zod.string(),
+    }),
+  ),
+  total: zod.number(),
 });
 
 /**
  * @summary Place a pharmacy order
  */
 export const CreatePharmacyOrderBody = zod.object({
-  items: zod.array(
-    zod.object({
-      id: zod.string(),
-      name: zod.string(),
-      price: zod.number(),
-      quantity: zod.number(),
-    }),
-  ),
-  prescriptionNote: zod.string().nullish(),
+  items: zod
+    .array(
+      zod.object({
+        name: zod.string(),
+        quantity: zod.number(),
+      }),
+    )
+    .optional(),
+  prescriptionUrl: zod.string().optional(),
   deliveryAddress: zod.string(),
-  contactPhone: zod.string(),
-  paymentMethod: zod.enum(["cash", "wallet"]),
+  paymentMethod: zod.enum(["cod", "wallet"]),
+  note: zod.string().optional(),
 });
 
 /**
- * @summary Forward geocode an address or place ID to lat/lng
+ * @summary Get pharmacy order details
  */
-export const GeocodeAddressQueryParams = zod.object({
-  address: zod.coerce
-    .string()
-    .optional()
-    .describe("Address text to forward geocode"),
-  place_id: zod.coerce
-    .string()
-    .optional()
-    .describe("Place ID to resolve to coordinates"),
+export const GetPharmacyOrderParams = zod.object({
+  id: zod.coerce.string(),
 });
 
-export const GeocodeAddressResponse = zod.object({
-  formattedAddress: zod.string().optional(),
-  lat: zod.number().optional(),
-  lng: zod.number().optional(),
-  placeId: zod.string().optional(),
+export const GetPharmacyOrderResponse = zod.object({
+  id: zod.string(),
+  userId: zod.string(),
+  items: zod
+    .array(
+      zod.object({
+        name: zod.string(),
+        quantity: zod.number(),
+        price: zod.number().optional(),
+      }),
+    )
+    .optional(),
+  prescriptionUrl: zod.string().optional(),
+  status: zod.enum([
+    "pending",
+    "confirmed",
+    "preparing",
+    "out_for_delivery",
+    "delivered",
+    "cancelled",
+  ]),
+  total: zod.number().optional(),
+  deliveryAddress: zod.string().optional(),
+  paymentMethod: zod.string().optional(),
+  note: zod.string().optional(),
+  createdAt: zod.string(),
 });
 
 /**
- * @summary Reverse geocode lat/lng coordinates to a human-readable address
+ * @summary Cancel a pharmacy order
  */
-export const ReverseGeocodeCoordinatesQueryParams = zod.object({
-  lat: zod.coerce.number().describe("Latitude"),
-  lng: zod.coerce.number().describe("Longitude"),
+export const CancelPharmacyOrderParams = zod.object({
+  id: zod.coerce.string(),
 });
 
-export const ReverseGeocodeCoordinatesResponse = zod.object({
-  address: zod
-    .string()
-    .optional()
-    .describe("Concise human-readable address (road + city)"),
-  formattedAddress: zod
-    .string()
-    .optional()
-    .describe("Full formatted address from provider"),
-  source: zod
-    .enum(["google", "nominatim", "fallback", "cache"])
-    .optional()
-    .describe("Which geocoding provider resolved the address"),
+export const CancelPharmacyOrderBody = zod.object({
+  reason: zod.string().optional(),
 });
 
-/**
- * @summary Get available school shift routes
- */
-export const GetSchoolRoutesResponse = zod.object({
-  routes: zod.array(
-    zod.object({
-      id: zod.string(),
-      schoolName: zod.string(),
-      area: zod.string(),
-      pickupTime: zod.string().optional(),
-      dropoffTime: zod.string().optional(),
-      monthlyFare: zod.number(),
-    }),
-  ),
-});
-
-/**
- * @summary Subscribe a student to a school route
- */
-export const SubscribeSchoolRouteBody = zod.object({
-  routeId: zod.string(),
-  studentName: zod.string(),
-  studentClass: zod.string(),
-  paymentMethod: zod.enum(["cash", "wallet"]),
-});
-
-export const SubscribeSchoolRouteResponse = zod.object({
-  message: zod.string().optional(),
-  subscriptionId: zod.string().optional(),
+export const CancelPharmacyOrderResponse = zod.object({
+  id: zod.string(),
+  userId: zod.string(),
+  items: zod
+    .array(
+      zod.object({
+        name: zod.string(),
+        quantity: zod.number(),
+        price: zod.number().optional(),
+      }),
+    )
+    .optional(),
+  prescriptionUrl: zod.string().optional(),
+  status: zod.enum([
+    "pending",
+    "confirmed",
+    "preparing",
+    "out_for_delivery",
+    "delivered",
+    "cancelled",
+  ]),
+  total: zod.number().optional(),
+  deliveryAddress: zod.string().optional(),
+  paymentMethod: zod.string().optional(),
+  note: zod.string().optional(),
+  createdAt: zod.string(),
 });
 
 /**
@@ -1002,6 +2272,44 @@ export const GetParcelBookingResponse = zod.object({
 });
 
 /**
+ * @summary Cancel a parcel booking
+ */
+export const CancelParcelBookingParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const CancelParcelBookingBody = zod.object({
+  reason: zod.string().optional(),
+});
+
+export const CancelParcelBookingResponse = zod.object({
+  id: zod.string(),
+  userId: zod.string(),
+  senderName: zod.string(),
+  senderPhone: zod.string(),
+  pickupAddress: zod.string(),
+  receiverName: zod.string(),
+  receiverPhone: zod.string(),
+  dropAddress: zod.string(),
+  parcelType: zod.string(),
+  weight: zod.number().optional(),
+  description: zod.string().optional(),
+  fare: zod.number(),
+  paymentMethod: zod.string(),
+  status: zod.enum([
+    "pending",
+    "accepted",
+    "picked_up",
+    "in_transit",
+    "delivered",
+    "cancelled",
+  ]),
+  estimatedTime: zod.string().optional(),
+  riderId: zod.string().optional(),
+  createdAt: zod.string(),
+});
+
+/**
  * @summary Get available payment methods
  */
 export const GetPaymentMethodsResponse = zod.object({
@@ -1021,6 +2329,70 @@ export const GetPaymentMethodsResponse = zod.object({
 });
 
 /**
+ * @summary Forward geocode an address or place ID to lat/lng
+ */
+export const GeocodeAddressQueryParams = zod.object({
+  address: zod.coerce
+    .string()
+    .optional()
+    .describe("Address text to forward geocode"),
+  place_id: zod.coerce
+    .string()
+    .optional()
+    .describe("Place ID to resolve to coordinates"),
+});
+
+export const GeocodeAddressResponse = zod.object({
+  lat: zod.number(),
+  lng: zod.number(),
+  formattedAddress: zod.string().optional(),
+  placeId: zod.string().optional(),
+});
+
+/**
+ * @summary Reverse geocode lat/lng coordinates to a human-readable address
+ */
+export const ReverseGeocodeCoordinatesQueryParams = zod.object({
+  lat: zod.coerce.number().describe("Latitude"),
+  lng: zod.coerce.number().describe("Longitude"),
+});
+
+export const ReverseGeocodeCoordinatesResponse = zod.object({
+  address: zod.string(),
+  city: zod.string().optional(),
+  country: zod.string().optional(),
+});
+
+/**
+ * @summary Get available school shift routes
+ */
+export const GetSchoolRoutesResponse = zod.object({
+  routes: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      shift: zod.string(),
+      capacity: zod.number().optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Subscribe a student to a school route
+ */
+export const SubscribeSchoolRouteBody = zod.object({
+  routeId: zod.string(),
+  studentName: zod.string(),
+  grade: zod.string().optional(),
+  parentPhone: zod.string().optional(),
+});
+
+export const SubscribeSchoolRouteResponse = zod.object({
+  message: zod.string().optional(),
+  subscriptionId: zod.string().optional(),
+});
+
+/**
  * @summary Update rider live location
  */
 export const UpdateLocationBody = zod.object({
@@ -1036,20 +2408,1273 @@ export const UpdateLocationResponse = zod.object({
 });
 
 /**
- * @summary Get product categories
+ * @summary Get authenticated vendor profile
  */
-export const GetCategoriesQueryParams = zod.object({
-  type: zod.enum(["mart", "food"]).optional(),
+export const GetVendorProfileResponse = zod.object({
+  id: zod.string(),
+  userId: zod.string(),
+  businessName: zod.string().optional(),
+  storeName: zod.string().optional(),
+  businessType: zod.string().optional(),
+  phone: zod.string().optional(),
+  email: zod.string().optional(),
+  avatar: zod.string().optional(),
+  isOnline: zod.boolean(),
+  isApproved: zod.boolean(),
+  rating: zod.number().optional(),
+  totalOrders: zod.number().optional(),
 });
 
-export const GetCategoriesResponse = zod.object({
-  categories: zod.array(
+/**
+ * @summary Update vendor profile
+ */
+export const UpdateVendorProfileBody = zod.object({
+  businessName: zod.string().optional(),
+  storeName: zod.string().optional(),
+  phone: zod.string().optional(),
+  email: zod.string().optional(),
+  avatar: zod.string().optional(),
+  quickReplies: zod.array(zod.string()).optional(),
+});
+
+export const UpdateVendorProfileResponse = zod.object({
+  id: zod.string(),
+  userId: zod.string(),
+  businessName: zod.string().optional(),
+  storeName: zod.string().optional(),
+  businessType: zod.string().optional(),
+  phone: zod.string().optional(),
+  email: zod.string().optional(),
+  avatar: zod.string().optional(),
+  isOnline: zod.boolean(),
+  isApproved: zod.boolean(),
+  rating: zod.number().optional(),
+  totalOrders: zod.number().optional(),
+});
+
+/**
+ * @summary Get vendor store settings
+ */
+export const GetVendorStoreResponse = zod.object({
+  minOrderAmount: zod.number().optional(),
+  deliveryFee: zod.number().optional(),
+  estimatedDeliveryTime: zod.string().optional(),
+  acceptsOnlinePayment: zod.boolean().optional(),
+  acceptsCash: zod.boolean().optional(),
+  description: zod.string().optional(),
+  address: zod.string().optional(),
+  city: zod.string().optional(),
+});
+
+/**
+ * @summary Update vendor store settings
+ */
+export const UpdateVendorStoreBody = zod.object({
+  minOrderAmount: zod.number().optional(),
+  deliveryFee: zod.number().optional(),
+  estimatedDeliveryTime: zod.string().optional(),
+  acceptsOnlinePayment: zod.boolean().optional(),
+  acceptsCash: zod.boolean().optional(),
+  description: zod.string().optional(),
+  address: zod.string().optional(),
+  city: zod.string().optional(),
+});
+
+export const UpdateVendorStoreResponse = zod.object({
+  minOrderAmount: zod.number().optional(),
+  deliveryFee: zod.number().optional(),
+  estimatedDeliveryTime: zod.string().optional(),
+  acceptsOnlinePayment: zod.boolean().optional(),
+  acceptsCash: zod.boolean().optional(),
+  description: zod.string().optional(),
+  address: zod.string().optional(),
+  city: zod.string().optional(),
+});
+
+/**
+ * @summary Get vendor dashboard stats
+ */
+export const GetVendorStatsResponse = zod.object({
+  todayOrders: zod.number(),
+  todayRevenue: zod.number(),
+  pendingOrders: zod.number(),
+  totalRevenue: zod.number().optional(),
+  totalOrders: zod.number().optional(),
+  averageRating: zod.number().optional(),
+});
+
+/**
+ * @summary Get vendor orders
+ */
+export const GetVendorOrdersQueryParams = zod.object({
+  status: zod.coerce.string().optional(),
+  limit: zod.coerce.number().optional(),
+  after: zod.coerce.string().optional(),
+});
+
+export const GetVendorOrdersResponse = zod.object({
+  orders: zod.array(
+    zod.object({
+      id: zod.string(),
+      userId: zod.string(),
+      items: zod.array(
+        zod.object({
+          productId: zod.string(),
+          name: zod.string(),
+          price: zod.number(),
+          quantity: zod.number(),
+          image: zod.string().optional(),
+        }),
+      ),
+      status: zod.string(),
+      total: zod.number(),
+      deliveryAddress: zod.string().optional(),
+      paymentMethod: zod.string(),
+      note: zod.string().optional(),
+      customerName: zod.string().optional(),
+      customerPhone: zod.string().optional(),
+      createdAt: zod.string(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary Update order status as vendor
+ */
+export const UpdateVendorOrderStatusParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateVendorOrderStatusBody = zod.object({
+  status: zod.enum([
+    "pending",
+    "confirmed",
+    "preparing",
+    "out_for_delivery",
+    "delivered",
+    "cancelled",
+  ]),
+  riderId: zod.string().optional(),
+});
+
+export const UpdateVendorOrderStatusResponse = zod.object({
+  id: zod.string(),
+  userId: zod.string(),
+  items: zod.array(
+    zod.object({
+      productId: zod.string(),
+      name: zod.string(),
+      price: zod.number(),
+      quantity: zod.number(),
+      image: zod.string().optional(),
+    }),
+  ),
+  status: zod.string(),
+  total: zod.number(),
+  deliveryAddress: zod.string().optional(),
+  paymentMethod: zod.string(),
+  note: zod.string().optional(),
+  customerName: zod.string().optional(),
+  customerPhone: zod.string().optional(),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Get vendor product listings
+ */
+export const GetVendorProductsQueryParams = zod.object({
+  status: zod.coerce.string().optional(),
+  limit: zod.coerce.number().optional(),
+  after: zod.coerce.string().optional(),
+});
+
+export const GetVendorProductsResponse = zod.object({
+  products: zod.array(
     zod.object({
       id: zod.string(),
       name: zod.string(),
-      icon: zod.string(),
+      description: zod.string().optional(),
+      price: zod.number(),
+      originalPrice: zod.number().optional(),
+      category: zod.string(),
       type: zod.enum(["mart", "food"]),
-      productCount: zod.number().optional(),
+      image: zod.string().optional(),
+      videoUrl: zod.string().nullish(),
+      vendorId: zod.string().optional(),
+      vendorName: zod.string().optional(),
+      rating: zod.number().optional(),
+      reviewCount: zod.number().optional(),
+      inStock: zod.boolean(),
+      unit: zod.string().optional(),
+      deliveryTime: zod.string().optional(),
     }),
   ),
+  total: zod.number(),
+});
+
+/**
+ * @summary Create a new product listing
+ */
+export const CreateVendorProductBody = zod.object({
+  name: zod.string(),
+  description: zod.string().optional(),
+  price: zod.number(),
+  categoryId: zod.string(),
+  stock: zod.number().optional(),
+  unit: zod.string().optional(),
+  images: zod.array(zod.string()).optional(),
+  isAvailable: zod.boolean().optional(),
+  discountPercent: zod.number().optional(),
+});
+
+/**
+ * @summary Update a product listing
+ */
+export const UpdateVendorProductParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateVendorProductBody = zod.object({
+  name: zod.string(),
+  description: zod.string().optional(),
+  price: zod.number(),
+  categoryId: zod.string(),
+  stock: zod.number().optional(),
+  unit: zod.string().optional(),
+  images: zod.array(zod.string()).optional(),
+  isAvailable: zod.boolean().optional(),
+  discountPercent: zod.number().optional(),
+});
+
+export const UpdateVendorProductResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  description: zod.string().optional(),
+  price: zod.number(),
+  originalPrice: zod.number().optional(),
+  category: zod.string(),
+  type: zod.enum(["mart", "food"]),
+  image: zod.string().optional(),
+  videoUrl: zod.string().nullish(),
+  vendorId: zod.string().optional(),
+  vendorName: zod.string().optional(),
+  rating: zod.number().optional(),
+  reviewCount: zod.number().optional(),
+  inStock: zod.boolean(),
+  unit: zod.string().optional(),
+  deliveryTime: zod.string().optional(),
+});
+
+/**
+ * @summary Delete a product listing
+ */
+export const DeleteVendorProductParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * @summary Get vendor wallet transactions
+ */
+export const GetVendorWalletTransactionsQueryParams = zod.object({
+  limit: zod.coerce.number().optional(),
+  after: zod.coerce.string().optional(),
+});
+
+export const GetVendorWalletTransactionsResponse = zod.object({
+  transactions: zod.array(
+    zod.object({
+      id: zod.string(),
+      type: zod.enum(["credit", "debit"]),
+      amount: zod.number(),
+      description: zod.string(),
+      createdAt: zod.string(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary Request vendor wallet withdrawal
+ */
+export const VendorWalletWithdrawBody = zod.object({
+  amount: zod.number(),
+  method: zod.string(),
+  accountNumber: zod.string(),
+  accountTitle: zod.string().optional(),
+  note: zod.string().optional(),
+});
+
+export const VendorWalletWithdrawResponse = zod.object({
+  message: zod.string().optional(),
+});
+
+/**
+ * @summary Get vendor sales analytics
+ */
+export const GetVendorAnalyticsQueryParams = zod.object({
+  period: zod.enum(["day", "week", "month"]).optional(),
+});
+
+export const GetVendorAnalyticsResponse = zod.object({
+  period: zod.string(),
+  revenue: zod.array(
+    zod.object({
+      date: zod.string().optional(),
+      amount: zod.number().optional(),
+    }),
+  ),
+  orders: zod.array(
+    zod.object({
+      date: zod.string().optional(),
+      count: zod.number().optional(),
+    }),
+  ),
+  topProducts: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        name: zod.string(),
+        description: zod.string().optional(),
+        price: zod.number(),
+        originalPrice: zod.number().optional(),
+        category: zod.string(),
+        type: zod.enum(["mart", "food"]),
+        image: zod.string().optional(),
+        videoUrl: zod.string().nullish(),
+        vendorId: zod.string().optional(),
+        vendorName: zod.string().optional(),
+        rating: zod.number().optional(),
+        reviewCount: zod.number().optional(),
+        inStock: zod.boolean(),
+        unit: zod.string().optional(),
+        deliveryTime: zod.string().optional(),
+      }),
+    )
+    .optional(),
+});
+
+/**
+ * @summary Get vendor operating schedule
+ */
+export const GetVendorScheduleResponse = zod.object({
+  monday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  tuesday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  wednesday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  thursday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  friday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  saturday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  sunday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+});
+
+/**
+ * @summary Update vendor operating schedule
+ */
+export const UpdateVendorScheduleBody = zod.object({
+  monday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  tuesday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  wednesday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  thursday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  friday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  saturday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  sunday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+});
+
+export const UpdateVendorScheduleResponse = zod.object({
+  monday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  tuesday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  wednesday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  thursday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  friday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  saturday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+  sunday: zod
+    .object({
+      open: zod.boolean(),
+      openTime: zod.string().optional(),
+      closeTime: zod.string().optional(),
+    })
+    .optional(),
+});
+
+/**
+ * @summary Get authenticated rider profile
+ */
+export const GetRiderProfileResponse = zod.object({
+  id: zod.string(),
+  userId: zod.string(),
+  name: zod.string().optional(),
+  phone: zod.string().optional(),
+  avatar: zod.string().optional(),
+  vehicleType: zod.string().optional(),
+  vehiclePlate: zod.string().optional(),
+  isOnline: zod.boolean(),
+  isApproved: zod.boolean(),
+  rating: zod.number().optional(),
+  totalRides: zod.number().optional(),
+  walletBalance: zod.number().optional(),
+});
+
+/**
+ * @summary Toggle rider online/offline status
+ */
+export const SetRiderOnlineStatusBody = zod.object({
+  online: zod.boolean(),
+});
+
+export const SetRiderOnlineStatusResponse = zod.object({
+  online: zod.boolean().optional(),
+});
+
+/**
+ * @summary Update rider profile
+ */
+export const UpdateRiderProfileBody = zod.object({
+  name: zod.string().optional(),
+  avatar: zod.string().optional(),
+  vehiclePlate: zod.string().optional(),
+  vehicleType: zod.string().optional(),
+  emergencyContact: zod.string().optional(),
+});
+
+export const UpdateRiderProfileResponse = zod.object({
+  id: zod.string(),
+  userId: zod.string(),
+  name: zod.string().optional(),
+  phone: zod.string().optional(),
+  avatar: zod.string().optional(),
+  vehicleType: zod.string().optional(),
+  vehiclePlate: zod.string().optional(),
+  isOnline: zod.boolean(),
+  isApproved: zod.boolean(),
+  rating: zod.number().optional(),
+  totalRides: zod.number().optional(),
+  walletBalance: zod.number().optional(),
+});
+
+/**
+ * @summary Get available order/ride requests for rider
+ */
+export const GetRiderRequestsResponse = zod.object({
+  orders: zod.array(
+    zod.object({
+      id: zod.string(),
+      userId: zod.string(),
+      type: zod.enum(["mart", "food"]),
+      items: zod.array(
+        zod.object({
+          productId: zod.string(),
+          name: zod.string(),
+          price: zod.number(),
+          quantity: zod.number(),
+          image: zod.string().optional(),
+        }),
+      ),
+      status: zod.enum([
+        "pending",
+        "confirmed",
+        "preparing",
+        "out_for_delivery",
+        "delivered",
+        "cancelled",
+      ]),
+      total: zod.number(),
+      deliveryAddress: zod.string().optional(),
+      paymentMethod: zod.enum(["cash", "wallet"]),
+      riderId: zod.string().optional(),
+      estimatedTime: zod.string().optional(),
+      createdAt: zod.string(),
+    }),
+  ),
+  rides: zod.array(
+    zod.object({
+      id: zod.string(),
+      userId: zod.string(),
+      type: zod.enum(["car", "bike"]),
+      status: zod.enum([
+        "searching",
+        "confirmed",
+        "in_progress",
+        "completed",
+        "cancelled",
+      ]),
+      pickupAddress: zod.string().optional(),
+      dropAddress: zod.string().optional(),
+      pickupLat: zod.number().optional(),
+      pickupLng: zod.number().optional(),
+      dropLat: zod.number().optional(),
+      dropLng: zod.number().optional(),
+      fare: zod.number(),
+      distance: zod.number(),
+      riderId: zod.string().optional(),
+      riderName: zod.string().optional(),
+      riderPhone: zod.string().optional(),
+      paymentMethod: zod.enum(["cash", "wallet"]),
+      tripOtp: zod.string().nullish(),
+      otpVerified: zod.boolean().optional(),
+      createdAt: zod.string(),
+      riderLat: zod
+        .number()
+        .nullish()
+        .describe("Live latitude of the assigned rider (active statuses only)"),
+      riderLng: zod
+        .number()
+        .nullish()
+        .describe(
+          "Live longitude of the assigned rider (active statuses only)",
+        ),
+      riderLocAge: zod
+        .number()
+        .nullish()
+        .describe("Seconds since the rider's live location was last updated"),
+      riderAvgRating: zod
+        .number()
+        .nullish()
+        .describe("Average star rating of the assigned rider"),
+      bids: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            rideId: zod.string(),
+            riderId: zod.string(),
+            riderName: zod.string(),
+            riderPhone: zod.string().nullish(),
+            fare: zod.number(),
+            note: zod.string().nullish(),
+            status: zod.string(),
+            vehiclePlate: zod.string().nullish(),
+            vehicleType: zod.string().nullish(),
+            ratingAvg: zod.number().nullish(),
+            totalRides: zod.number(),
+            expiresAt: zod.string(),
+            createdAt: zod.string(),
+            updatedAt: zod.string(),
+          }),
+        )
+        .optional()
+        .describe(
+          "Pending bids on this ride (only populated while bargaining)",
+        ),
+    }),
+  ),
+});
+
+/**
+ * @summary Get rider's current active delivery/ride
+ */
+export const GetRiderActiveDeliveryResponse = zod.object({
+  type: zod.enum(["order", "ride", "parcel"]).nullish(),
+  order: zod
+    .object({
+      id: zod.string(),
+      userId: zod.string(),
+      type: zod.enum(["mart", "food"]),
+      items: zod.array(
+        zod.object({
+          productId: zod.string(),
+          name: zod.string(),
+          price: zod.number(),
+          quantity: zod.number(),
+          image: zod.string().optional(),
+        }),
+      ),
+      status: zod.enum([
+        "pending",
+        "confirmed",
+        "preparing",
+        "out_for_delivery",
+        "delivered",
+        "cancelled",
+      ]),
+      total: zod.number(),
+      deliveryAddress: zod.string().optional(),
+      paymentMethod: zod.enum(["cash", "wallet"]),
+      riderId: zod.string().optional(),
+      estimatedTime: zod.string().optional(),
+      createdAt: zod.string(),
+    })
+    .optional(),
+  ride: zod
+    .object({
+      id: zod.string(),
+      userId: zod.string(),
+      type: zod.enum(["car", "bike"]),
+      status: zod.enum([
+        "searching",
+        "confirmed",
+        "in_progress",
+        "completed",
+        "cancelled",
+      ]),
+      pickupAddress: zod.string().optional(),
+      dropAddress: zod.string().optional(),
+      pickupLat: zod.number().optional(),
+      pickupLng: zod.number().optional(),
+      dropLat: zod.number().optional(),
+      dropLng: zod.number().optional(),
+      fare: zod.number(),
+      distance: zod.number(),
+      riderId: zod.string().optional(),
+      riderName: zod.string().optional(),
+      riderPhone: zod.string().optional(),
+      paymentMethod: zod.enum(["cash", "wallet"]),
+      tripOtp: zod.string().nullish(),
+      otpVerified: zod.boolean().optional(),
+      createdAt: zod.string(),
+      riderLat: zod
+        .number()
+        .nullish()
+        .describe("Live latitude of the assigned rider (active statuses only)"),
+      riderLng: zod
+        .number()
+        .nullish()
+        .describe(
+          "Live longitude of the assigned rider (active statuses only)",
+        ),
+      riderLocAge: zod
+        .number()
+        .nullish()
+        .describe("Seconds since the rider's live location was last updated"),
+      riderAvgRating: zod
+        .number()
+        .nullish()
+        .describe("Average star rating of the assigned rider"),
+      bids: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            rideId: zod.string(),
+            riderId: zod.string(),
+            riderName: zod.string(),
+            riderPhone: zod.string().nullish(),
+            fare: zod.number(),
+            note: zod.string().nullish(),
+            status: zod.string(),
+            vehiclePlate: zod.string().nullish(),
+            vehicleType: zod.string().nullish(),
+            ratingAvg: zod.number().nullish(),
+            totalRides: zod.number(),
+            expiresAt: zod.string(),
+            createdAt: zod.string(),
+            updatedAt: zod.string(),
+          }),
+        )
+        .optional()
+        .describe(
+          "Pending bids on this ride (only populated while bargaining)",
+        ),
+    })
+    .optional(),
+});
+
+/**
+ * @summary Accept a delivery order
+ */
+export const RiderAcceptOrderParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const RiderAcceptOrderResponse = zod.object({
+  id: zod.string(),
+  userId: zod.string(),
+  type: zod.enum(["mart", "food"]),
+  items: zod.array(
+    zod.object({
+      productId: zod.string(),
+      name: zod.string(),
+      price: zod.number(),
+      quantity: zod.number(),
+      image: zod.string().optional(),
+    }),
+  ),
+  status: zod.enum([
+    "pending",
+    "confirmed",
+    "preparing",
+    "out_for_delivery",
+    "delivered",
+    "cancelled",
+  ]),
+  total: zod.number(),
+  deliveryAddress: zod.string().optional(),
+  paymentMethod: zod.enum(["cash", "wallet"]),
+  riderId: zod.string().optional(),
+  estimatedTime: zod.string().optional(),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Reject a delivery order
+ */
+export const RiderRejectOrderParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const RiderRejectOrderBody = zod.object({
+  reason: zod.string().optional(),
+});
+
+/**
+ * @summary Update delivery order status
+ */
+export const UpdateRiderOrderStatusParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateRiderOrderStatusBody = zod.object({
+  status: zod.enum(["picked_up", "out_for_delivery", "delivered"]),
+});
+
+export const UpdateRiderOrderStatusResponse = zod.object({
+  id: zod.string(),
+  userId: zod.string(),
+  type: zod.enum(["mart", "food"]),
+  items: zod.array(
+    zod.object({
+      productId: zod.string(),
+      name: zod.string(),
+      price: zod.number(),
+      quantity: zod.number(),
+      image: zod.string().optional(),
+    }),
+  ),
+  status: zod.enum([
+    "pending",
+    "confirmed",
+    "preparing",
+    "out_for_delivery",
+    "delivered",
+    "cancelled",
+  ]),
+  total: zod.number(),
+  deliveryAddress: zod.string().optional(),
+  paymentMethod: zod.enum(["cash", "wallet"]),
+  riderId: zod.string().optional(),
+  estimatedTime: zod.string().optional(),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Accept a ride request or submit a bid
+ */
+export const RiderAcceptRideParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const RiderAcceptRideBody = zod.object({
+  fare: zod.number().optional(),
+});
+
+export const RiderAcceptRideResponse = zod.object({
+  id: zod.string(),
+  userId: zod.string(),
+  type: zod.enum(["car", "bike"]),
+  status: zod.enum([
+    "searching",
+    "confirmed",
+    "in_progress",
+    "completed",
+    "cancelled",
+  ]),
+  pickupAddress: zod.string().optional(),
+  dropAddress: zod.string().optional(),
+  pickupLat: zod.number().optional(),
+  pickupLng: zod.number().optional(),
+  dropLat: zod.number().optional(),
+  dropLng: zod.number().optional(),
+  fare: zod.number(),
+  distance: zod.number(),
+  riderId: zod.string().optional(),
+  riderName: zod.string().optional(),
+  riderPhone: zod.string().optional(),
+  paymentMethod: zod.enum(["cash", "wallet"]),
+  tripOtp: zod.string().nullish(),
+  otpVerified: zod.boolean().optional(),
+  createdAt: zod.string(),
+  riderLat: zod
+    .number()
+    .nullish()
+    .describe("Live latitude of the assigned rider (active statuses only)"),
+  riderLng: zod
+    .number()
+    .nullish()
+    .describe("Live longitude of the assigned rider (active statuses only)"),
+  riderLocAge: zod
+    .number()
+    .nullish()
+    .describe("Seconds since the rider's live location was last updated"),
+  riderAvgRating: zod
+    .number()
+    .nullish()
+    .describe("Average star rating of the assigned rider"),
+  bids: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        rideId: zod.string(),
+        riderId: zod.string(),
+        riderName: zod.string(),
+        riderPhone: zod.string().nullish(),
+        fare: zod.number(),
+        note: zod.string().nullish(),
+        status: zod.string(),
+        vehiclePlate: zod.string().nullish(),
+        vehicleType: zod.string().nullish(),
+        ratingAvg: zod.number().nullish(),
+        totalRides: zod.number(),
+        expiresAt: zod.string(),
+        createdAt: zod.string(),
+        updatedAt: zod.string(),
+      }),
+    )
+    .optional()
+    .describe("Pending bids on this ride (only populated while bargaining)"),
+});
+
+/**
+ * @summary Verify trip OTP before starting ride
+ */
+export const RiderVerifyRideOtpParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const RiderVerifyRideOtpBody = zod.object({
+  otp: zod.string(),
+});
+
+export const RiderVerifyRideOtpResponse = zod.object({
+  id: zod.string(),
+  userId: zod.string(),
+  type: zod.enum(["car", "bike"]),
+  status: zod.enum([
+    "searching",
+    "confirmed",
+    "in_progress",
+    "completed",
+    "cancelled",
+  ]),
+  pickupAddress: zod.string().optional(),
+  dropAddress: zod.string().optional(),
+  pickupLat: zod.number().optional(),
+  pickupLng: zod.number().optional(),
+  dropLat: zod.number().optional(),
+  dropLng: zod.number().optional(),
+  fare: zod.number(),
+  distance: zod.number(),
+  riderId: zod.string().optional(),
+  riderName: zod.string().optional(),
+  riderPhone: zod.string().optional(),
+  paymentMethod: zod.enum(["cash", "wallet"]),
+  tripOtp: zod.string().nullish(),
+  otpVerified: zod.boolean().optional(),
+  createdAt: zod.string(),
+  riderLat: zod
+    .number()
+    .nullish()
+    .describe("Live latitude of the assigned rider (active statuses only)"),
+  riderLng: zod
+    .number()
+    .nullish()
+    .describe("Live longitude of the assigned rider (active statuses only)"),
+  riderLocAge: zod
+    .number()
+    .nullish()
+    .describe("Seconds since the rider's live location was last updated"),
+  riderAvgRating: zod
+    .number()
+    .nullish()
+    .describe("Average star rating of the assigned rider"),
+  bids: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        rideId: zod.string(),
+        riderId: zod.string(),
+        riderName: zod.string(),
+        riderPhone: zod.string().nullish(),
+        fare: zod.number(),
+        note: zod.string().nullish(),
+        status: zod.string(),
+        vehiclePlate: zod.string().nullish(),
+        vehicleType: zod.string().nullish(),
+        ratingAvg: zod.number().nullish(),
+        totalRides: zod.number(),
+        expiresAt: zod.string(),
+        createdAt: zod.string(),
+        updatedAt: zod.string(),
+      }),
+    )
+    .optional()
+    .describe("Pending bids on this ride (only populated while bargaining)"),
+});
+
+/**
+ * @summary Update ride status (started/completed)
+ */
+export const UpdateRiderRideStatusParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateRiderRideStatusBody = zod.object({
+  status: zod.enum(["in_progress", "completed"]),
+});
+
+export const UpdateRiderRideStatusResponse = zod.object({
+  id: zod.string(),
+  userId: zod.string(),
+  type: zod.enum(["car", "bike"]),
+  status: zod.enum([
+    "searching",
+    "confirmed",
+    "in_progress",
+    "completed",
+    "cancelled",
+  ]),
+  pickupAddress: zod.string().optional(),
+  dropAddress: zod.string().optional(),
+  pickupLat: zod.number().optional(),
+  pickupLng: zod.number().optional(),
+  dropLat: zod.number().optional(),
+  dropLng: zod.number().optional(),
+  fare: zod.number(),
+  distance: zod.number(),
+  riderId: zod.string().optional(),
+  riderName: zod.string().optional(),
+  riderPhone: zod.string().optional(),
+  paymentMethod: zod.enum(["cash", "wallet"]),
+  tripOtp: zod.string().nullish(),
+  otpVerified: zod.boolean().optional(),
+  createdAt: zod.string(),
+  riderLat: zod
+    .number()
+    .nullish()
+    .describe("Live latitude of the assigned rider (active statuses only)"),
+  riderLng: zod
+    .number()
+    .nullish()
+    .describe("Live longitude of the assigned rider (active statuses only)"),
+  riderLocAge: zod
+    .number()
+    .nullish()
+    .describe("Seconds since the rider's live location was last updated"),
+  riderAvgRating: zod
+    .number()
+    .nullish()
+    .describe("Average star rating of the assigned rider"),
+  bids: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        rideId: zod.string(),
+        riderId: zod.string(),
+        riderName: zod.string(),
+        riderPhone: zod.string().nullish(),
+        fare: zod.number(),
+        note: zod.string().nullish(),
+        status: zod.string(),
+        vehiclePlate: zod.string().nullish(),
+        vehicleType: zod.string().nullish(),
+        ratingAvg: zod.number().nullish(),
+        totalRides: zod.number(),
+        expiresAt: zod.string(),
+        createdAt: zod.string(),
+        updatedAt: zod.string(),
+      }),
+    )
+    .optional()
+    .describe("Pending bids on this ride (only populated while bargaining)"),
+});
+
+/**
+ * @summary Submit a counter offer on a ride
+ */
+export const RiderCounterOfferParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const RiderCounterOfferBody = zod.object({
+  fare: zod.number(),
+});
+
+export const RiderCounterOfferResponse = zod.object({
+  id: zod.string(),
+  userId: zod.string(),
+  type: zod.enum(["car", "bike"]),
+  status: zod.enum([
+    "searching",
+    "confirmed",
+    "in_progress",
+    "completed",
+    "cancelled",
+  ]),
+  pickupAddress: zod.string().optional(),
+  dropAddress: zod.string().optional(),
+  pickupLat: zod.number().optional(),
+  pickupLng: zod.number().optional(),
+  dropLat: zod.number().optional(),
+  dropLng: zod.number().optional(),
+  fare: zod.number(),
+  distance: zod.number(),
+  riderId: zod.string().optional(),
+  riderName: zod.string().optional(),
+  riderPhone: zod.string().optional(),
+  paymentMethod: zod.enum(["cash", "wallet"]),
+  tripOtp: zod.string().nullish(),
+  otpVerified: zod.boolean().optional(),
+  createdAt: zod.string(),
+  riderLat: zod
+    .number()
+    .nullish()
+    .describe("Live latitude of the assigned rider (active statuses only)"),
+  riderLng: zod
+    .number()
+    .nullish()
+    .describe("Live longitude of the assigned rider (active statuses only)"),
+  riderLocAge: zod
+    .number()
+    .nullish()
+    .describe("Seconds since the rider's live location was last updated"),
+  riderAvgRating: zod
+    .number()
+    .nullish()
+    .describe("Average star rating of the assigned rider"),
+  bids: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        rideId: zod.string(),
+        riderId: zod.string(),
+        riderName: zod.string(),
+        riderPhone: zod.string().nullish(),
+        fare: zod.number(),
+        note: zod.string().nullish(),
+        status: zod.string(),
+        vehiclePlate: zod.string().nullish(),
+        vehicleType: zod.string().nullish(),
+        ratingAvg: zod.number().nullish(),
+        totalRides: zod.number(),
+        expiresAt: zod.string(),
+        createdAt: zod.string(),
+        updatedAt: zod.string(),
+      }),
+    )
+    .optional()
+    .describe("Pending bids on this ride (only populated while bargaining)"),
+});
+
+/**
+ * @summary Get rider's delivery/ride history
+ */
+export const GetRiderHistoryQueryParams = zod.object({
+  limit: zod.coerce.number().optional(),
+  after: zod.coerce.string().optional(),
+});
+
+export const GetRiderHistoryResponse = zod.object({
+  entries: zod.array(
+    zod.object({
+      id: zod.string(),
+      type: zod.enum(["order", "ride", "parcel"]),
+      status: zod.string(),
+      fare: zod.number().optional(),
+      createdAt: zod.string(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary Get rider earnings summary
+ */
+export const GetRiderEarningsQueryParams = zod.object({
+  period: zod.enum(["today", "week", "month"]).optional(),
+});
+
+export const GetRiderEarningsResponse = zod.object({
+  period: zod.string(),
+  totalEarnings: zod.number(),
+  totalRides: zod.number(),
+  totalOrders: zod.number(),
+  cashCollected: zod.number().optional(),
+  walletBalance: zod.number().optional(),
+  breakdown: zod
+    .array(
+      zod.object({
+        date: zod.string().optional(),
+        amount: zod.number().optional(),
+      }),
+    )
+    .optional(),
+});
+
+/**
+ * @summary Get rider wallet transactions
+ */
+export const GetRiderWalletTransactionsQueryParams = zod.object({
+  limit: zod.coerce.number().optional(),
+  after: zod.coerce.string().optional(),
+});
+
+export const GetRiderWalletTransactionsResponse = zod.object({
+  transactions: zod.array(
+    zod.object({
+      id: zod.string(),
+      type: zod.enum(["credit", "debit"]),
+      amount: zod.number(),
+      description: zod.string(),
+      createdAt: zod.string(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary Request rider wallet withdrawal
+ */
+export const RiderWalletWithdrawBody = zod.object({
+  amount: zod.number(),
+  method: zod.string(),
+  accountNumber: zod.string(),
+  accountTitle: zod.string().optional(),
+  note: zod.string().optional(),
+});
+
+export const RiderWalletWithdrawResponse = zod.object({
+  message: zod.string().optional(),
+});
+
+/**
+ * @summary Update rider GPS location
+ */
+export const UpdateRiderLocationBody = zod.object({
+  latitude: zod.number(),
+  longitude: zod.number(),
+  accuracy: zod.number().optional(),
+  heading: zod.number().optional(),
+  speed: zod.number().optional(),
+  batteryLevel: zod.number().optional(),
+});
+
+export const UpdateRiderLocationResponse = zod.object({
+  success: zod.boolean(),
+  updatedAt: zod.string(),
 });

@@ -6,9 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface PharmacyOrderItem {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
-}
+export type SubscribePush200 = {
+  message?: string;
+};

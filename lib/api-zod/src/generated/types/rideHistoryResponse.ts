@@ -9,4 +9,5 @@ import type { Ride } from "./ride";
 
 export interface RideHistoryResponse {
   rides: Ride[];
+  total: number;
 }

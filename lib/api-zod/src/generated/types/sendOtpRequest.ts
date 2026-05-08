@@ -5,7 +5,11 @@
  * AJKMart Super App API
  * OpenAPI spec version: 0.1.0
  */
+import type { SendOtpRequestPreferredChannel } from "./sendOtpRequestPreferredChannel";
+import type { SendOtpRequestRole } from "./sendOtpRequestRole";
 
 export interface SendOtpRequest {
   phone: string;
+  role?: SendOtpRequestRole;
+  preferredChannel?: SendOtpRequestPreferredChannel;
 }
