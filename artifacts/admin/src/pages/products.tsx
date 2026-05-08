@@ -292,10 +292,47 @@ export default function Products() {
   const [bulkStock, setBulkStock] = useState<"" | "in" | "out">("");
   const [bulkApplying, setBulkApplying] = useState(false);
 
-  const [pricingRules, setPricingRules] = useState([
-    { id: "1", name: "Weekend Sale", type: "discount_pct", value: "10", category: "all", active: true },
-    { id: "2", name: "Bulk Discount (5+ items)", type: "discount_flat", value: "50", category: "mart", active: false },
-  ]);
+  const [pricingRules, setPricingRules] = useState<Array<{ id: string; name: string; type: string; value: string; category: string; active: boolean }>>([]);
+  const [pricingLoading, setPricingLoading] = useState(false);
+  const [pricingSaving, setPricingSaving] = useState(false);
+
+  // Load pricing rules from platform settings on mount / tab switch to "pricing"
+  useEffect(() => {
+    if (tab !== "pricing") return;
+    setPricingLoading(true);
+    fetcher("/platform-settings")
+      .then((data: any) => {
+        const all: Array<{ key: string; value: string }> = data?.settings ?? [];
+        const raw = all.find(s => s.key === "global_pricing_rules")?.value;
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) { setPricingRules(parsed); return; }
+          } catch { /* ignore parse errors */ }
+        }
+        // Default seed rules when no saved value
+        setPricingRules([
+          { id: "1", name: "Weekend Sale", type: "discount_pct", value: "10", category: "all", active: true },
+          { id: "2", name: "Bulk Discount (5+ items)", type: "discount_flat", value: "50", category: "mart", active: false },
+        ]);
+      })
+      .catch(() => setPricingRules([]))
+      .finally(() => setPricingLoading(false));
+  }, [tab]);
+
+  const savePricingRules = async () => {
+    setPricingSaving(true);
+    try {
+      await fetcher("/platform-settings", {
+        method: "PUT",
+        body: JSON.stringify({ settings: [{ key: "global_pricing_rules", value: JSON.stringify(pricingRules) }] }),
+      });
+      toast({ title: "Pricing rules saved", description: "Rules will apply at checkout." });
+    } catch (e: any) {
+      toast({ title: "Save failed", description: e.message, variant: "destructive" });
+    }
+    setPricingSaving(false);
+  };
 
   const toggleProductSelect = useCallback((id: string) => {
     setSelectedProductIds(prev => {
@@ -582,15 +619,21 @@ export default function Products() {
       {/* Pricing Rules Tab */}
       {tab === "pricing" && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">Define global pricing rules that apply across products. Rules are applied at checkout.</p>
-            <Button size="sm" className="h-9 rounded-xl gap-2" onClick={() => {
-              const newRule = { id: String(Date.now()), name: "New Rule", type: "discount_pct", value: "5", category: "all", active: false };
-              setPricingRules(prev => [...prev, newRule]);
-            }}>
-              <Plus className="w-4 h-4" /> Add Rule
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button size="sm" variant="outline" className="h-9 rounded-xl gap-2" onClick={() => {
+                const newRule = { id: String(Date.now()), name: "New Rule", type: "discount_pct", value: "5", category: "all", active: false };
+                setPricingRules(prev => [...prev, newRule]);
+              }}>
+                <Plus className="w-4 h-4" /> Add Rule
+              </Button>
+              <Button size="sm" className="h-9 rounded-xl gap-2" onClick={() => void savePricingRules()} disabled={pricingSaving || pricingLoading}>
+                {pricingSaving ? "Saving…" : "Save Rules"}
+              </Button>
+            </div>
           </div>
+          {pricingLoading && <div className="h-24 rounded-xl bg-muted animate-pulse" />}
           <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden">
             <Table>
               <TableHeader>

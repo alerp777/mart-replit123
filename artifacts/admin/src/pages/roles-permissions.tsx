@@ -234,8 +234,70 @@ function StatsBar({ roles, catalog, adminRoleMap, adminsLoaded, loading }: Stats
 
 /* ── Permission Matrix component ─────────────────────────────────── */
 
-function PermissionMatrix({ roles, catalog, loading }: { roles: RbacRole[]; catalog: PermissionDef[]; loading: boolean }) {
+function PermissionMatrix({ roles, catalog, loading, canManage, onReload }: {
+  roles: RbacRole[];
+  catalog: PermissionDef[];
+  loading: boolean;
+  canManage: boolean;
+  onReload: () => void;
+}) {
+  const { toast } = useToast();
   const [matrixSearch, setMatrixSearch] = useState("");
+  // draftMap: roleId -> Set of permissionIds (mutable draft state per role)
+  const [draftMap, setDraftMap] = useState<Record<string, Set<string>>>({});
+  const [savingRole, setSavingRole] = useState<string | null>(null);
+
+  // Initialise draft map when roles load / change
+  useEffect(() => {
+    setDraftMap(prev => {
+      const next: Record<string, Set<string>> = {};
+      for (const r of roles) {
+        // Keep existing draft if present, otherwise seed from server state
+        next[r.id] = prev[r.id] ?? new Set(r.permissions);
+      }
+      return next;
+    });
+  }, [roles]);
+
+  const toggleCell = (roleId: string, permId: string) => {
+    if (!canManage) return;
+    setDraftMap(prev => {
+      const next = { ...prev };
+      const set = new Set(prev[roleId] ?? []);
+      set.has(permId) ? set.delete(permId) : set.add(permId);
+      next[roleId] = set;
+      return next;
+    });
+  };
+
+  const isDirty = (roleId: string) => {
+    const role = roles.find(r => r.id === roleId);
+    if (!role) return false;
+    const draft = draftMap[roleId];
+    if (!draft) return false;
+    const orig = new Set(role.permissions);
+    if (orig.size !== draft.size) return true;
+    for (const p of draft) if (!orig.has(p)) return true;
+    return false;
+  };
+
+  const saveRole = async (roleId: string) => {
+    const draft = draftMap[roleId];
+    if (!draft) return;
+    setSavingRole(roleId);
+    try {
+      await fetchAdmin(`/system/rbac/roles/${roleId}/permissions`, {
+        method: "PUT",
+        body: JSON.stringify({ permissions: Array.from(draft) }),
+      });
+      toast({ title: "Permissions saved", description: "Role permissions updated successfully." });
+      onReload();
+    } catch (e: any) {
+      toast({ title: "Save failed", description: e.message, variant: "destructive" });
+    }
+    setSavingRole(null);
+  };
+
   const categorized = useMemo(() => {
     const map = new Map<string, PermissionDef[]>();
     for (const p of catalog) {
@@ -275,6 +337,7 @@ function PermissionMatrix({ roles, catalog, loading }: { roles: RbacRole[]; cata
         </div>
         <p className="text-xs text-muted-foreground">
           {catalog.length} permissions · {roles.length} roles
+          {canManage && <span className="ml-1 text-indigo-600">· click any cell to toggle</span>}
         </p>
       </div>
 
@@ -283,14 +346,29 @@ function PermissionMatrix({ roles, catalog, loading }: { roles: RbacRole[]; cata
           <thead>
             <tr className="bg-muted/40 border-b border-border">
               <th className="text-left px-4 py-3 font-semibold text-muted-foreground sticky left-0 bg-muted/40 z-10 min-w-[220px]">Permission</th>
-              {roles.map(r => (
-                <th key={r.id} className="px-3 py-3 font-semibold text-center whitespace-nowrap">
-                  <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] ${colorForString(r.id, ROLE_COLORS)}`}>
-                    {r.isBuiltIn && <Lock className="w-2.5 h-2.5 opacity-60" />}
-                    {r.name}
-                  </div>
-                </th>
-              ))}
+              {roles.map(r => {
+                const dirty = isDirty(r.id);
+                return (
+                  <th key={r.id} className="px-3 py-3 font-semibold text-center whitespace-nowrap">
+                    <div className="flex flex-col items-center gap-1.5">
+                      <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] ${colorForString(r.id, ROLE_COLORS)}`}>
+                        {r.isBuiltIn && <Lock className="w-2.5 h-2.5 opacity-60" />}
+                        {r.name}
+                      </div>
+                      {canManage && dirty && (
+                        <button
+                          onClick={() => void saveRole(r.id)}
+                          disabled={savingRole === r.id}
+                          className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+                        >
+                          <Save className="w-2.5 h-2.5" />
+                          {savingRole === r.id ? "Saving…" : "Save"}
+                        </button>
+                      )}
+                    </div>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -320,22 +398,32 @@ function PermissionMatrix({ roles, catalog, loading }: { roles: RbacRole[]; cata
                       </div>
                     </td>
                     {roles.map(r => {
-                      const has = r.permissions.includes(p.id);
+                      const draft = draftMap[r.id];
+                      const has = draft ? draft.has(p.id) : r.permissions.includes(p.id);
+                      const wasOrig = r.permissions.includes(p.id);
+                      const changed = has !== wasOrig;
                       return (
                         <td key={r.id} className="px-3 py-2.5 text-center">
-                          {has ? (
-                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-600">
+                          <button
+                            onClick={() => toggleCell(r.id, p.id)}
+                            disabled={!canManage}
+                            title={canManage ? (has ? "Click to revoke" : "Click to grant") : "Read-only"}
+                            className={`inline-flex items-center justify-center w-5 h-5 rounded-full transition-all ${
+                              has
+                                ? `bg-indigo-100 text-indigo-600 ${canManage ? "hover:bg-indigo-200 cursor-pointer" : ""} ${changed ? "ring-2 ring-amber-400" : ""}`
+                                : `bg-slate-100 text-slate-300 ${canManage ? "hover:bg-slate-200 cursor-pointer" : ""} ${changed ? "ring-2 ring-amber-400" : ""}`
+                            }`}
+                          >
+                            {has ? (
                               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                               </svg>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 text-slate-300">
+                            ) : (
                               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
                               </svg>
-                            </span>
-                          )}
+                            )}
+                          </button>
                         </td>
                       );
                     })}
@@ -346,6 +434,12 @@ function PermissionMatrix({ roles, catalog, loading }: { roles: RbacRole[]; cata
           </tbody>
         </table>
       </div>
+      {canManage && (
+        <p className="text-xs text-muted-foreground">
+          <span className="inline-block w-3 h-3 rounded-full ring-2 ring-amber-400 bg-indigo-100 mr-1.5 align-middle" />
+          Highlighted cells have unsaved changes. Click "Save" above the role column to persist.
+        </p>
+      )}
     </div>
   );
 }
@@ -709,7 +803,7 @@ export default function RolesPermissionsPage() {
 
       {/* Matrix tab */}
       {tab === "matrix" && (
-        <PermissionMatrix roles={roles} catalog={catalog} loading={loading} />
+        <PermissionMatrix roles={roles} catalog={catalog} loading={loading} canManage={canManage} onReload={() => void reload()} />
       )}
 
       {/* Read-only banner */}

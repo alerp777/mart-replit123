@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ShoppingBag, User, Package, Phone, CheckCircle2, AlertTriangle, Receipt, RotateCcw, Flag } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,101 +15,138 @@ import { STATUS_LABELS, allowedNext, isTerminal, canCancel } from "./constants";
 import { fetcher } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
-/* ── Return Request Panel ── */
-function ReturnPanel({ order }: { order: any }) {
+/* ── Return Request Panel — Admin Moderation View ── */
+function ReturnPanel({ order, onRefundOrder }: { order: any; onRefundOrder?: () => void }) {
   const { toast } = useToast();
+  const [requests, setRequests] = useState<any[]>([]);
+  const [loadingReqs, setLoadingReqs] = useState(true);
   const [reason, setReason] = useState("");
   const [amount, setAmount] = useState(String(order.total ?? ""));
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [actioning, setActioning] = useState<string | null>(null);
 
-  const handleSubmit = async () => {
+  const loadRequests = async () => {
+    setLoadingReqs(true);
+    try {
+      const data = await fetcher(`/orders/${order.id}/returns`);
+      setRequests(Array.isArray(data) ? data : data?.returns ?? []);
+    } catch {
+      setRequests([]);
+    }
+    setLoadingReqs(false);
+  };
+
+  useEffect(() => { void loadRequests(); }, [order.id]);
+
+  const handleSubmitNew = async () => {
     if (!reason.trim()) { toast({ title: "Reason required", variant: "destructive" }); return; }
     setSubmitting(true);
     try {
       await fetcher(`/orders/${order.id}/return`, { method: "POST", body: JSON.stringify({ reason: reason.trim(), amount: parseFloat(amount) || order.total }) });
-      toast({ title: "Return request submitted", description: "Admin team will review and process the refund." });
-      setSubmitted(true);
+      toast({ title: "Return request created", description: "Return request logged." });
+      setReason("");
+      await loadRequests();
     } catch (e: any) {
       toast({ title: "Failed", description: e.message, variant: "destructive" });
     }
     setSubmitting(false);
   };
 
-  if (submitted) {
-    return (
-      <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl p-4">
-        <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
-        <div>
-          <p className="text-sm font-semibold text-green-800">Return submitted</p>
-          <p className="text-xs text-green-600">Team will process the refund within 24–48 hrs.</p>
-        </div>
-      </div>
-    );
-  }
+  const handleAction = async (returnId: string, action: "approve" | "reject") => {
+    setActioning(returnId);
+    try {
+      await fetcher(`/orders/${order.id}/returns/${returnId}`, { method: "PATCH", body: JSON.stringify({ status: action === "approve" ? "approved" : "rejected" }) });
+      toast({ title: action === "approve" ? "Return approved" : "Return rejected", description: action === "approve" ? "Refund can now be issued." : "Return request closed." });
+      await loadRequests();
+      if (action === "approve" && onRefundOrder) onRefundOrder();
+    } catch (e: any) {
+      toast({ title: "Action failed", description: e.message, variant: "destructive" });
+    }
+    setActioning(null);
+  };
+
+  const statusColor = (s: string) => {
+    if (s === "approved") return "bg-green-100 text-green-700";
+    if (s === "rejected") return "bg-red-100 text-red-700";
+    return "bg-amber-100 text-amber-700";
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
-        <p className="font-semibold text-amber-800">Order #{order.id?.slice(-8).toUpperCase()}</p>
-        <p className="text-amber-700 mt-0.5">Total: <strong>{formatCurrency(order.total)}</strong> · {order.paymentMethod === "wallet" ? "Wallet" : "Cash"}</p>
+    <div className="space-y-5">
+      {/* Existing requests */}
+      <div className="space-y-2">
+        <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Existing Return Requests</h4>
+        {loadingReqs ? (
+          <div className="h-16 rounded-xl bg-muted animate-pulse" />
+        ) : requests.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-2">No return requests for this order yet.</p>
+        ) : (
+          requests.map((req: any) => (
+            <div key={req.id} className="border border-border rounded-xl p-3 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-foreground line-clamp-2">{req.reason || "No reason provided"}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Amount: <strong>{formatCurrency(req.amount ?? req.refundAmount ?? 0)}</strong> · {formatDate(req.createdAt)}</p>
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${statusColor(req.status)}`}>
+                  {req.status ?? "pending"}
+                </span>
+              </div>
+              {(req.status === "pending" || !req.status) && (
+                <div className="flex gap-2">
+                  <Button size="sm" className="h-7 text-[11px] rounded-lg bg-green-600 hover:bg-green-700 text-white gap-1" disabled={actioning === req.id} onClick={() => handleAction(req.id, "approve")}>
+                    <CheckCircle2 className="w-3 h-3" /> Approve
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-[11px] rounded-lg text-red-600 border-red-300 hover:bg-red-50 gap-1" disabled={actioning === req.id} onClick={() => handleAction(req.id, "reject")}>
+                    <AlertTriangle className="w-3 h-3" /> Reject
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))
+        )}
       </div>
-      <div className="space-y-1.5">
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Return Reason *</label>
-        <textarea
-          value={reason}
-          onChange={e => setReason(e.target.value)}
-          placeholder="Describe why the return is needed (damaged item, wrong product, etc.)"
-          rows={3}
-          className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-        />
+
+      {/* Create new return request */}
+      <div className="border-t pt-4 space-y-3">
+        <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Log New Return Request</h4>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
+          <p className="font-semibold text-amber-800">Order #{order.id?.slice(-8).toUpperCase()}</p>
+          <p className="text-amber-700 mt-0.5">Total: <strong>{formatCurrency(order.total)}</strong></p>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Return Reason *</label>
+          <textarea
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder="Describe why the return is needed…"
+            rows={3}
+            className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Refund Amount (Rs.)</label>
+          <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} min="1" max={order.total} step="1" className="h-10 rounded-xl" placeholder="Partial or full refund" />
+          <p className="text-xs text-muted-foreground">Max: {formatCurrency(order.total)}</p>
+        </div>
+        <Button onClick={handleSubmitNew} disabled={submitting} className="w-full h-10 rounded-xl bg-amber-600 hover:bg-amber-700 text-white gap-2">
+          <RotateCcw className="w-4 h-4" />
+          {submitting ? "Submitting…" : "Log Return Request"}
+        </Button>
       </div>
-      <div className="space-y-1.5">
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Refund Amount (Rs.)</label>
-        <Input
-          type="number"
-          value={amount}
-          onChange={e => setAmount(e.target.value)}
-          min="1"
-          max={order.total}
-          step="1"
-          className="h-10 rounded-xl"
-          placeholder="Partial or full refund"
-        />
-        <p className="text-xs text-muted-foreground">Max: {formatCurrency(order.total)}</p>
-      </div>
-      <Button
-        onClick={handleSubmit}
-        disabled={submitting}
-        className="w-full h-10 rounded-xl bg-amber-600 hover:bg-amber-700 text-white gap-2"
-      >
-        <RotateCcw className="w-4 h-4" />
-        {submitting ? "Submitting…" : "Submit Return Request"}
-      </Button>
     </div>
   );
 }
 
-/* ── Dispute Panel ── */
+/* ── Dispute Panel — Admin Moderation View ── */
 function DisputePanel({ order }: { order: any }) {
   const { toast } = useToast();
+  const [disputes, setDisputes] = useState<any[]>([]);
+  const [loadingDisp, setLoadingDisp] = useState(true);
   const [note, setNote] = useState("");
   const [type, setType] = useState("wrong_item");
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-
-  const handleSubmit = async () => {
-    if (!note.trim()) { toast({ title: "Details required", variant: "destructive" }); return; }
-    setSubmitting(true);
-    try {
-      await fetcher(`/orders/${order.id}/dispute`, { method: "POST", body: JSON.stringify({ type, note: note.trim() }) });
-      toast({ title: "Dispute filed", description: "Order flagged for admin review." });
-      setSubmitted(true);
-    } catch (e: any) {
-      toast({ title: "Failed", description: e.message, variant: "destructive" });
-    }
-    setSubmitting(false);
-  };
+  const [actioning, setActioning] = useState<string | null>(null);
 
   const DISPUTE_TYPES = [
     { value: "wrong_item", label: "Wrong item delivered" },
@@ -120,52 +157,109 @@ function DisputePanel({ order }: { order: any }) {
     { value: "other", label: "Other" },
   ];
 
-  if (submitted) {
-    return (
-      <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
-        <Flag className="w-5 h-5 text-red-600 shrink-0" />
-        <div>
-          <p className="text-sm font-semibold text-red-800">Dispute filed</p>
-          <p className="text-xs text-red-600">Order flagged for investigation. You'll be notified of the outcome.</p>
-        </div>
-      </div>
-    );
-  }
+  const loadDisputes = async () => {
+    setLoadingDisp(true);
+    try {
+      const data = await fetcher(`/orders/${order.id}/disputes`);
+      setDisputes(Array.isArray(data) ? data : data?.disputes ?? []);
+    } catch {
+      setDisputes([]);
+    }
+    setLoadingDisp(false);
+  };
+
+  useEffect(() => { void loadDisputes(); }, [order.id]);
+
+  const handleSubmitNew = async () => {
+    if (!note.trim()) { toast({ title: "Details required", variant: "destructive" }); return; }
+    setSubmitting(true);
+    try {
+      await fetcher(`/orders/${order.id}/dispute`, { method: "POST", body: JSON.stringify({ type, note: note.trim() }) });
+      toast({ title: "Dispute logged", description: "Order flagged for investigation." });
+      setNote("");
+      await loadDisputes();
+    } catch (e: any) {
+      toast({ title: "Failed", description: e.message, variant: "destructive" });
+    }
+    setSubmitting(false);
+  };
+
+  const handleResolve = async (disputeId: string, resolution: "resolved" | "dismissed") => {
+    setActioning(disputeId);
+    try {
+      await fetcher(`/orders/${order.id}/disputes/${disputeId}`, { method: "PATCH", body: JSON.stringify({ status: resolution }) });
+      toast({ title: resolution === "resolved" ? "Dispute resolved" : "Dispute dismissed" });
+      await loadDisputes();
+    } catch (e: any) {
+      toast({ title: "Action failed", description: e.message, variant: "destructive" });
+    }
+    setActioning(null);
+  };
+
+  const statusColor = (s: string) => {
+    if (s === "resolved") return "bg-green-100 text-green-700";
+    if (s === "dismissed") return "bg-slate-100 text-slate-600";
+    return "bg-red-100 text-red-700";
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm">
-        <p className="font-semibold text-red-800">File a dispute for Order #{order.id?.slice(-8).toUpperCase()}</p>
-        <p className="text-red-700 mt-0.5">Disputes are reviewed by the admin team within 24 hrs.</p>
+    <div className="space-y-5">
+      {/* Existing disputes */}
+      <div className="space-y-2">
+        <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Open Disputes</h4>
+        {loadingDisp ? (
+          <div className="h-16 rounded-xl bg-muted animate-pulse" />
+        ) : disputes.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-2">No disputes for this order.</p>
+        ) : (
+          disputes.map((d: any) => (
+            <div key={d.id} className="border border-border rounded-xl p-3 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-foreground">{DISPUTE_TYPES.find(t => t.value === d.type)?.label ?? d.type}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{d.note || d.details}</p>
+                  <p className="text-[10px] text-muted-foreground/60">{formatDate(d.createdAt)}</p>
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${statusColor(d.status)}`}>
+                  {d.status ?? "open"}
+                </span>
+              </div>
+              {(d.status === "open" || !d.status) && (
+                <div className="flex gap-2">
+                  <Button size="sm" className="h-7 text-[11px] rounded-lg bg-green-600 hover:bg-green-700 text-white gap-1" disabled={actioning === d.id} onClick={() => handleResolve(d.id, "resolved")}>
+                    <CheckCircle2 className="w-3 h-3" /> Resolve
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-[11px] rounded-lg text-slate-600 gap-1" disabled={actioning === d.id} onClick={() => handleResolve(d.id, "dismissed")}>
+                    Dismiss
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))
+        )}
       </div>
-      <div className="space-y-1.5">
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Dispute Type</label>
-        <select
-          value={type}
-          onChange={e => setType(e.target.value)}
-          className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm"
-        >
-          {DISPUTE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-        </select>
+
+      {/* Log new dispute */}
+      <div className="border-t pt-4 space-y-3">
+        <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Log New Dispute</h4>
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm">
+          <p className="font-semibold text-red-800">Order #{order.id?.slice(-8).toUpperCase()}</p>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Dispute Type</label>
+          <select value={type} onChange={e => setType(e.target.value)} className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm">
+            {DISPUTE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Details *</label>
+          <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Provide full context…" rows={3} className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" />
+        </div>
+        <Button onClick={handleSubmitNew} disabled={submitting} className="w-full h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white gap-2">
+          <Flag className="w-4 h-4" />
+          {submitting ? "Logging…" : "Log Dispute"}
+        </Button>
       </div>
-      <div className="space-y-1.5">
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Details *</label>
-        <textarea
-          value={note}
-          onChange={e => setNote(e.target.value)}
-          placeholder="Provide full context — what happened, what was expected, any evidence..."
-          rows={4}
-          className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-      </div>
-      <Button
-        onClick={handleSubmit}
-        disabled={submitting}
-        className="w-full h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white gap-2"
-      >
-        <Flag className="w-4 h-4" />
-        {submitting ? "Filing…" : "File Dispute"}
-      </Button>
     </div>
   );
 }
@@ -231,7 +325,7 @@ export function OrderDetailDrawer({
             ))}
           </div>
 
-          {activeTab === "return" && <ReturnPanel order={selectedOrder} />}
+          {activeTab === "return" && <ReturnPanel order={selectedOrder} onRefundOrder={onRefundOrder} />}
           {activeTab === "dispute" && <DisputePanel order={selectedOrder} />}
           {activeTab === "details" && <>
 
