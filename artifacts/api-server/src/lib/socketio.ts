@@ -868,3 +868,8 @@ export function emitVanTripUpdate(scheduleId: string, date: string, payload: {
   _io.to(room).emit("van:trip-update", payload);
 }
 
+export function getConnectedClientCount(): number {
+  if (!_io) return 0;
+  return _io.sockets.sockets.size;
+}
+

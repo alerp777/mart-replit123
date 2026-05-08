@@ -204,4 +204,80 @@ router.get("/me", async (req, res) => {
   });
 });
 
+/* ── Permission verification utilities ─────────────────────────── */
+
+/**
+ * GET /verify/:permission
+ * Check whether the currently authenticated admin holds a specific permission.
+ * Returns { allowed: boolean, permission: string }.
+ */
+router.get("/verify/:permission", async (req, res) => {
+  const aReq = req as AdminRequest;
+  const permission = req.params["permission"]!;
+  if (!permission) return sendValidationError(res, "permission param is required");
+  const perms: string[] = aReq.adminPermissions?.length
+    ? aReq.adminPermissions
+    : await resolveAdminPermissions(aReq.adminId ?? null, aReq.adminRole);
+  const allowed = perms.includes(permission) || perms.includes("*");
+  sendSuccess(res, { permission, allowed });
+});
+
+/**
+ * GET /verify-bulk
+ * Check whether the currently authenticated admin holds all of the requested
+ * permissions in one round-trip.
+ * Query: ?permissions=orders.view,finance.withdrawals.view
+ * Returns { results: Record<string, boolean>, all: boolean }.
+ */
+router.get("/verify-bulk", async (req, res) => {
+  const aReq = req as AdminRequest;
+  const raw = req.query["permissions"] as string | undefined;
+  if (!raw) return sendValidationError(res, "permissions query param is required");
+  const requested = raw.split(",").map(p => p.trim()).filter(Boolean);
+  if (requested.length === 0) return sendValidationError(res, "permissions must be a non-empty comma-separated list");
+  if (requested.length > 50) return sendValidationError(res, "at most 50 permissions per request");
+  const perms: string[] = aReq.adminPermissions?.length
+    ? aReq.adminPermissions
+    : await resolveAdminPermissions(aReq.adminId ?? null, aReq.adminRole);
+  const superAdmin = perms.includes("*");
+  const results: Record<string, boolean> = {};
+  for (const p of requested) {
+    results[p] = superAdmin || perms.includes(p);
+  }
+  sendSuccess(res, { results, all: Object.values(results).every(Boolean) });
+});
+
+/**
+ * POST /simulate
+ * Simulate the effective permission set for any admin.
+ * Useful for previewing what an admin can do before promoting or demoting them.
+ * Body: { adminId: string }
+ * Returns { adminId, permissions, roleNames, isSuperAdmin }.
+ */
+const simulateSchema = z.object({
+  adminId: z.string().uuid("adminId must be a valid UUID"),
+});
+
+router.post("/simulate",
+  requirePermission("system.roles.manage"),
+  async (req, res) => {
+    try {
+      const { adminId } = simulateSchema.parse(req.body);
+      const [perms, roles] = await Promise.all([
+        resolveAdminPermissions(adminId, null),
+        getAdminRoles(adminId),
+      ]);
+      sendSuccess(res, {
+        adminId,
+        permissions: perms,
+        roleNames: (roles as { name: string }[]).map(r => r.name),
+        isSuperAdmin: perms.includes("*"),
+      });
+    } catch (err) {
+      if (err instanceof z.ZodError) return sendValidationError(res, err.message);
+      sendError(res, (err as Error).message, 400);
+    }
+  },
+);
+
 export default router;

@@ -18,7 +18,7 @@ export type CatKey =
   "content" | "integrations" | "security" | "system" | "weather" |
   "dispatch" | "branding" | "system_limits" | "regional" |
   "notifications" | "uploads" | "pagination" | "van" | "onboarding" | "moderation" |
-  "cache" | "jwt" | "ratelimit" | "geo" | "localization" | "network";
+  "cache" | "jwt" | "ratelimit" | "geo" | "localization" | "network" | "compliance";
 
 export const TOGGLE_KEYS = new Set([
   "feature_mart","feature_food","feature_rides","feature_pharmacy",

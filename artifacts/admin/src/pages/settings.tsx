@@ -31,6 +31,8 @@ import { SecuritySection } from "./settings-security";
 import { NavigationGuard } from "@/components/NavigationGuard";
 import { SystemSection } from "./settings-system";
 import { WeatherSection } from "./settings-weather";
+import { ComplianceSection } from "./settings-compliance";
+import { BrandingSection } from "./settings-branding";
 import { renderSection, Setting, CatKey, TEXT_KEYS } from "./settings-render";
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -48,57 +50,69 @@ import { renderSection, Setting, CatKey, TEXT_KEYS } from "./settings-render";
  * ───────────────────────────────────────────────────────────────────────── */
 
 export type Top10Key =
-  | "general" | "services" | "operations" | "roles" | "finance_payments"
-  | "communication" | "integrations" | "security_access" | "system_perf" | "widgets";
+  | "general" | "pricing" | "orders" | "payments" | "notifications"
+  | "security" | "integrations" | "compliance" | "branding" | "monitoring";
 
 const TOP10_ORDER: readonly Top10Key[] = [
-  "general", "services", "operations", "roles", "finance_payments",
-  "communication", "integrations", "security_access", "system_perf", "widgets",
+  "general", "pricing", "orders", "payments", "notifications",
+  "security", "integrations", "compliance", "branding", "monitoring",
 ];
 
 /** Map every legacy DB category → its Top-10 parent. */
 export const LEGACY_TO_TOP10: Record<string, Top10Key> = {
-  // 1. General  (identity + regional + branding theme)
+  // 1. General Settings
   general:       "general",
   regional:      "general",
   localization:  "general",
-  branding:      "general",
-  // 2. Services & Features
-  features:      "services",
-  // 3. Operations & Dispatch  (includes onboarding flows for vendors/riders/customers)
-  dispatch:      "operations",
-  orders:        "operations",
-  delivery:      "operations",
-  rides:         "operations",
-  van:           "operations",
-  onboarding:    "operations",
-  // 4. Roles
-  customer:      "roles",
-  rider:         "roles",
-  vendor:        "roles",
-  // 5. Finance & Payments
-  finance:       "finance_payments",
-  payment:       "finance_payments",
-  // 6. Communication
-  notifications: "communication",
-  content:       "communication",
+  features:      "general",
+  // 2. Pricing & Commissions
+  finance:       "pricing",
+  customer:      "pricing",
+  rider:         "pricing",
+  vendor:        "pricing",
+  commission:    "pricing",
+  pricing:       "pricing",
+  refunds:       "pricing",
+  // 3. Order Rules
+  orders:        "orders",
+  delivery:      "orders",
+  dispatch:      "orders",
+  rides:         "orders",
+  van:           "orders",
+  onboarding:    "orders",
+  // 4. Payment Methods
+  payment:       "payments",
+  // 5. Notifications
+  notifications: "notifications",
+  content:       "notifications",
+  sms:           "notifications",
+  email:         "notifications",
+  // 6. Security
+  security:      "security",
+  jwt:           "security",
+  moderation:    "security",
+  ratelimit:     "security",
   // 7. Integrations
   integrations:  "integrations",
-  // 8. Security & Access  (auth + abuse-prevention: moderation, rate limits, JWT)
-  security:      "security_access",
-  jwt:           "security_access",
-  moderation:    "security_access",
-  ratelimit:     "security_access",
-  // 9. System & Performance
-  system:        "system_perf",
-  system_limits: "system_perf",
-  cache:         "system_perf",
-  network:       "system_perf",
-  geo:           "system_perf",
-  uploads:       "system_perf",
-  pagination:    "system_perf",
-  // 10. Widgets & Add-ons
-  weather:       "widgets",
+  // 8. Compliance
+  gdpr:          "compliance",
+  terms:         "compliance",
+  compliance:    "compliance",
+  // 9. Branding
+  branding:      "branding",
+  colors:        "branding",
+  app_store:     "branding",
+  // 10. Monitoring
+  monitoring:    "monitoring",
+  uptime:        "monitoring",
+  system:        "monitoring",
+  system_limits: "monitoring",
+  cache:         "monitoring",
+  network:       "monitoring",
+  geo:           "monitoring",
+  uploads:       "monitoring",
+  pagination:    "monitoring",
+  weather:       "monitoring",
 };
 
 /** Top-10 group metadata (sidebar entries + section header). */
@@ -107,40 +121,40 @@ const TOP10_CONFIG: Record<Top10Key, {
   description: string; children: CatKey[];
 }> = {
   general: {
-    label: "General", emoji: "🏢", icon: Globe,
+    label: "General Settings", emoji: "🏢", icon: Globe,
     color: "text-gray-700", bg: "bg-gray-50",
-    description: "App identity, regional formats, locale and brand colors",
-    children: ["general", "regional", "localization", "branding"],
+    description: "App identity, feature toggles, regional formats and locale",
+    children: ["general", "regional", "localization", "features"],
   },
-  services: {
-    label: "Services & Features", emoji: "⚡", icon: Zap,
-    color: "text-violet-600", bg: "bg-violet-50",
-    description: "Master toggles for every service across the platform",
-    children: ["features"],
-  },
-  operations: {
-    label: "Operations & Dispatch", emoji: "🚀", icon: Gauge,
-    color: "text-cyan-600", bg: "bg-cyan-50",
-    description: "Dispatch, orders, delivery, rides, van and onboarding flows",
-    children: ["dispatch", "orders", "delivery", "rides", "van", "onboarding"],
-  },
-  roles: {
-    label: "Role Limits & Rates", emoji: "👤", icon: Users,
-    color: "text-blue-600", bg: "bg-blue-50",
-    description: "Per-role earnings, wallet limits, commission rates and settlement rules",
-    children: ["customer", "rider", "vendor"],
-  },
-  finance_payments: {
-    label: "Finance & Payments", emoji: "💰", icon: BarChart3,
+  pricing: {
+    label: "Pricing & Commissions", emoji: "💰", icon: BarChart3,
     color: "text-purple-600", bg: "bg-purple-50",
-    description: "Tax, commissions, payouts and payment providers",
-    children: ["finance", "payment"],
+    description: "Finance, tax, commissions, wallet limits and per-role rates",
+    children: ["finance", "customer", "rider", "vendor"],
   },
-  communication: {
-    label: "Communication", emoji: "📢", icon: MessageSquare,
-    color: "text-pink-600", bg: "bg-pink-50",
-    description: "Notifications, banners and announcements",
+  orders: {
+    label: "Order Rules", emoji: "📦", icon: ShoppingCart,
+    color: "text-amber-600", bg: "bg-amber-50",
+    description: "Order rules, delivery, dispatch, rides, van and onboarding flows",
+    children: ["orders", "delivery", "dispatch", "rides", "van", "onboarding"],
+  },
+  payments: {
+    label: "Payment Methods", emoji: "💳", icon: CreditCard,
+    color: "text-emerald-600", bg: "bg-emerald-50",
+    description: "JazzCash, EasyPaisa, Bank Transfer, COD and AJK Wallet settings",
+    children: ["payment"],
+  },
+  notifications: {
+    label: "Notifications", emoji: "🔔", icon: Bell,
+    color: "text-yellow-600", bg: "bg-yellow-50",
+    description: "Email templates, push notification text, banners and announcements",
     children: ["notifications", "content"],
+  },
+  security: {
+    label: "Security", emoji: "🔒", icon: Shield,
+    color: "text-red-600", bg: "bg-red-50",
+    description: "Auth, OTP, sessions, JWT, content moderation and rate limits",
+    children: ["security", "jwt", "moderation", "ratelimit"],
   },
   integrations: {
     label: "Integrations", emoji: "🔌", icon: Puzzle,
@@ -148,23 +162,23 @@ const TOP10_CONFIG: Record<Top10Key, {
     description: "Maps, push, SMS, email, WhatsApp, analytics and monitoring",
     children: ["integrations"],
   },
-  security_access: {
-    label: "Security & Access", emoji: "🔒", icon: Shield,
-    color: "text-red-600", bg: "bg-red-50",
-    description: "Auth, OTP, sessions, JWT, content moderation and rate limits",
-    children: ["security", "jwt", "moderation", "ratelimit"],
+  compliance: {
+    label: "Compliance", emoji: "📜", icon: FileText,
+    color: "text-slate-600", bg: "bg-slate-50",
+    description: "GDPR, terms of service, privacy policy and legal compliance",
+    children: ["compliance"],
   },
-  system_perf: {
-    label: "System & Performance", emoji: "🔧", icon: Server,
-    color: "text-slate-700", bg: "bg-slate-100",
-    description: "Database, limits, cache, network, geo and pagination",
-    children: ["system", "system_limits", "cache", "network", "geo", "uploads", "pagination"],
-  },
-  widgets: {
-    label: "Widgets & Add-ons", emoji: "✨", icon: Sparkles,
+  branding: {
+    label: "Branding", emoji: "🎨", icon: Palette,
     color: "text-fuchsia-600", bg: "bg-fuchsia-50",
-    description: "Weather widget and other optional dashboard add-ons",
-    children: ["weather"],
+    description: "Service colors, map center coordinates and app branding",
+    children: ["branding"],
+  },
+  monitoring: {
+    label: "Monitoring", emoji: "🔧", icon: Server,
+    color: "text-slate-700", bg: "bg-slate-100",
+    description: "Database, cache, network, geo, uploads, weather and system limits",
+    children: ["system", "system_limits", "cache", "network", "geo", "uploads", "pagination", "weather"],
   },
 };
 
@@ -201,9 +215,10 @@ const CATEGORY_CONFIG: Record<CatKey, { label: string; icon: any; color: string;
   geo:          { label: "Geo & Zones",         icon: MapPin,       color: "text-emerald-600", bg: "bg-emerald-50", activeBg: "bg-emerald-600", description: "Default zone radius and open-world fallback behavior" },
   localization: { label: "Localization",        icon: Languages,    color: "text-lime-600",    bg: "bg-lime-50",    activeBg: "bg-lime-600",    description: "Currency code and symbol used across the platform" },
   network:      { label: "Network & Retry",     icon: Wifi,         color: "text-cyan-600",    bg: "bg-cyan-50",    activeBg: "bg-cyan-600",    description: "API timeout, retry attempts, backoff delay, GPS queue size and dismissed-request TTL" },
+  compliance:   { label: "Compliance",          icon: FileText,     color: "text-slate-600",   bg: "bg-slate-50",   activeBg: "bg-slate-600",   description: "GDPR, terms of service, privacy policy and legal compliance links" },
 };
 
-const ALWAYS_VISIBLE = new Set<CatKey>(["payment", "integrations", "security", "system", "weather"]);
+const ALWAYS_VISIBLE = new Set<CatKey>(["payment", "integrations", "security", "system", "weather", "compliance", "branding"]);
 
 /** Resolve a deep-link param (?tab= / ?cat= / route :section / route :subsection)
  *  — accepts both top-10 keys and legacy category names. */
@@ -637,7 +652,7 @@ export default function SettingsPage() {
         <PaymentSection
           localValues={localValues} dirtyKeys={dirtyKeys}
           handleChange={handleChange} handleToggle={handleToggle}
-          onNavigateFeatures={() => setActiveTop10("services")}
+          onNavigateFeatures={() => setActiveTop10("general")}
         />
       );
     }
@@ -654,6 +669,24 @@ export default function SettingsPage() {
         <SecuritySection
           localValues={localValues} dirtyKeys={dirtyKeys}
           handleChange={handleChange} handleToggle={handleToggle}
+        />
+      );
+    }
+    if (cat === "compliance") {
+      return (
+        <ComplianceSection
+          localValues={localValues} dirtyKeys={dirtyKeys}
+          handleChange={handleChange} handleToggle={handleToggle}
+          settings={settings}
+        />
+      );
+    }
+    if (cat === "branding") {
+      return (
+        <BrandingSection
+          localValues={localValues} dirtyKeys={dirtyKeys}
+          handleChange={handleChange} handleToggle={handleToggle}
+          settings={settings}
         />
       );
     }

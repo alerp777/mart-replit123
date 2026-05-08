@@ -601,8 +601,8 @@ export const useHealthDashboard = () => {
   return useQuery({
     queryKey: ["admin-health-dashboard"],
     queryFn: () => fetcher("/system/health-dashboard"),
-    refetchInterval: 30_000,
-    staleTime: 20_000,
+    refetchInterval: 10_000,
+    staleTime: 8_000,
   });
 };
 

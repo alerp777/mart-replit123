@@ -34,6 +34,28 @@ export function getSampleCount(): number {
   return samples.length;
 }
 
+/**
+ * Return the p50 (median) response time across the rolling window,
+ * or null if fewer than 10 samples have been collected.
+ */
+export function getP50Ms(): number | null {
+  if (samples.length < 10) return null;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const idx = Math.ceil(sorted.length * 0.50) - 1;
+  return Math.round(sorted[Math.max(0, idx)]!);
+}
+
+/**
+ * Return the p99 response time across the rolling window,
+ * or null if fewer than 10 samples have been collected.
+ */
+export function getP99Ms(): number | null {
+  if (samples.length < 10) return null;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const idx = Math.ceil(sorted.length * 0.99) - 1;
+  return Math.round(sorted[Math.max(0, idx)]!);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    System metrics — memory & disk
 ══════════════════════════════════════════════════════════════════════════ */

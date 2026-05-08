@@ -498,7 +498,7 @@ export default function HealthDashboard() {
 
       {/* auto-refresh notice */}
       <p className="text-center text-xs text-slate-600">
-        Auto-refreshes every 30 seconds · Last updated {dataUpdatedAt > 0 ? updatedAgo(new Date(dataUpdatedAt).toISOString()) : "—"}
+        Auto-refreshes every 10 seconds · Last updated {dataUpdatedAt > 0 ? updatedAgo(new Date(dataUpdatedAt).toISOString()) : "—"}
       </p>
     </div>
   );
@@ -559,11 +559,16 @@ function PerfMetricBar({ value, threshold, label, unit = "%" }: {
 function PerformanceSection({ data: d, isLoading }: { data: any; isLoading: boolean }) {
   const perf = d?.performance;
 
-  const p95Ms     = perf?.p95Ms     ?? null;
-  const dbQueryMs = perf?.dbQueryMs ?? null;
-  const memoryPct = perf?.memoryPct ?? null;
-  const diskPct   = perf?.diskPct   ?? null;
-  const diskFreeGb = perf?.diskFreeGb ?? null;
+  const p50Ms          = perf?.p50Ms          ?? null;
+  const p95Ms          = perf?.p95Ms          ?? null;
+  const p99Ms          = perf?.p99Ms          ?? null;
+  const dbLatencyMs    = perf?.dbLatencyMs    ?? null;
+  const dbQueryMs      = perf?.dbQueryMs      ?? null;
+  const redisCacheHitRate = perf?.redisCacheHitRate ?? null;
+  const queueDepth     = perf?.queueDepth     ?? 0;
+  const memoryPct      = perf?.memoryPct      ?? null;
+  const diskPct        = perf?.diskPct        ?? null;
+  const diskFreeGb     = perf?.diskFreeGb     ?? null;
 
   const thresholds = perf?.thresholds ?? { p95Ms: 500, dbMs: 1000, memoryPct: 80, diskPct: 80 };
 
@@ -578,7 +583,7 @@ function PerformanceSection({ data: d, isLoading }: { data: any; isLoading: bool
     <Section title="Performance" icon={Gauge}>
       {isLoading ? (
         <div className="space-y-3">
-          {[...Array(4)].map((_, i) => <SkeletonBlock key={i} className="h-12" />)}
+          {[...Array(6)].map((_, i) => <SkeletonBlock key={i} className="h-12" />)}
         </div>
       ) : (
         <div>
@@ -591,22 +596,52 @@ function PerformanceSection({ data: d, isLoading }: { data: any; isLoading: bool
             </div>
           )}
 
+          {/* ── API Percentiles ── */}
+          <div className="mb-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Gauge size={13} className="text-slate-500" />
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">API Response Percentiles</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 mb-2">
+              {[
+                { label: "p50 (median)", value: p50Ms },
+                { label: "p95", value: p95Ms, threshold: thresholds.p95Ms },
+                { label: "p99 (tail)", value: p99Ms },
+              ].map(({ label, value, threshold }) => {
+                const isAlert = threshold != null && value != null && value >= threshold;
+                const isWarning = threshold != null && value != null && value >= threshold * 0.8 && value < threshold;
+                const color = isAlert ? "text-red-400" : isWarning ? "text-amber-400" : "text-emerald-400";
+                return (
+                  <div key={label} className={`rounded-lg border p-2 text-center ${isAlert ? "border-red-500/30 bg-red-500/5" : isWarning ? "border-amber-500/30 bg-amber-500/5" : "border-slate-700/50 bg-slate-800/40"}`}>
+                    <p className={`text-base font-bold font-mono ${value == null ? "text-slate-600" : color}`}>
+                      {value != null ? `${value}ms` : "—"}
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">{label}</p>
+                    {threshold != null && value != null && (
+                      <p className="text-[9px] text-slate-700">limit {threshold}ms</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {p95Ms === null && (
+              <p className="text-xs text-slate-600">Collecting samples — requires at least 10 API requests</p>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {/* API response time */}
+            {/* DB ping latency */}
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <Gauge size={13} className="text-slate-500" />
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">API Response (p95)</span>
+                <Database size={13} className="text-slate-500" />
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">DB Latency (SELECT 1)</span>
               </div>
               <PerfMetricBar
-                value={p95Ms}
-                threshold={thresholds.p95Ms}
-                label="p95 response time"
+                value={dbLatencyMs}
+                threshold={50}
+                label="Ping latency"
                 unit="ms"
               />
-              {p95Ms === null && (
-                <p className="text-xs text-slate-600 mt-1.5">Collecting samples — requires at least 10 API requests</p>
-              )}
             </div>
 
             {/* DB query latency */}
@@ -618,9 +653,44 @@ function PerformanceSection({ data: d, isLoading }: { data: any; isLoading: bool
               <PerfMetricBar
                 value={dbQueryMs}
                 threshold={thresholds.dbMs}
-                label="Query latency"
+                label="Full query latency"
                 unit="ms"
               />
+            </div>
+
+            {/* Redis cache hit rate */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Zap size={13} className="text-slate-500" />
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Redis Cache Hit Rate</span>
+              </div>
+              {redisCacheHitRate === null ? (
+                <div className="flex items-center justify-between py-2.5 border-b border-slate-700/40">
+                  <span className="text-sm text-slate-400">Hit rate</span>
+                  <span className="text-xs text-slate-600 italic">Redis not connected</span>
+                </div>
+              ) : (
+                <PerfMetricBar
+                  value={100 - redisCacheHitRate}
+                  threshold={30}
+                  label={`${redisCacheHitRate}% cache hit rate`}
+                  unit="%"
+                />
+              )}
+            </div>
+
+            {/* Queue depth */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Activity size={13} className="text-slate-500" />
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Active Connections</span>
+              </div>
+              <div className="flex items-center justify-between py-2.5 border-b border-slate-700/40">
+                <span className="text-sm text-slate-400">Socket.IO clients</span>
+                <span className={`text-sm font-medium font-mono ${queueDepth > 500 ? "text-amber-400" : "text-slate-200"}`}>
+                  {queueDepth}
+                </span>
+              </div>
             </div>
 
             {/* Memory usage */}

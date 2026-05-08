@@ -2908,7 +2908,7 @@ router.get("/system/health-dashboard", async (_req, res) => {
   const now = new Date();
 
   /* ── Performance metrics (parallel with other checks) ── */
-  const { getP95Ms, getMemoryPct, getDiskPct, getDiskFreeGb } = await import("../../lib/metrics/responseTime.js");
+  const { getP95Ms, getP50Ms, getP99Ms, getMemoryPct, getDiskPct, getDiskFreeGb } = await import("../../lib/metrics/responseTime.js");
 
   /* ── Server health ── */
   const uptimeSec = Math.floor(process.uptime());
@@ -2983,9 +2983,23 @@ router.get("/system/health-dashboard", async (_req, res) => {
 
   /* ── Performance metrics ── */
   const p95Ms    = getP95Ms();
+  const p50Ms    = getP50Ms();
+  const p99Ms    = getP99Ms();
   const memoryPct = getMemoryPct();
   const diskPct   = getDiskPct();
   const diskFreeGb = getDiskFreeGb();
+
+  /* ── DB latency (SELECT 1 round-trip) ── */
+  let dbLatencyMs: number | null = null;
+  if (dbStatus === "ok") {
+    try {
+      const t0 = Date.now();
+      await db.execute(sql`SELECT 1`);
+      dbLatencyMs = Date.now() - t0;
+    } catch {
+      dbLatencyMs = null;
+    }
+  }
 
   let dbQueryMs: number | null = null;
   if (dbStatus === "ok") {
@@ -2996,6 +3010,35 @@ router.get("/system/health-dashboard", async (_req, res) => {
     } catch {
       dbQueryMs = null;
     }
+  }
+
+  /* ── Redis cache hit rate (best-effort) ── */
+  let redisCacheHitRate: number | null = null;
+  try {
+    const { redisClient } = await import("../../lib/redis.js");
+    if (redisClient) {
+      const info = await (redisClient as any).info("stats");
+      const hitsMatch = String(info).match(/keyspace_hits:(\d+)/);
+      const missesMatch = String(info).match(/keyspace_misses:(\d+)/);
+      if (hitsMatch && missesMatch) {
+        const hits = parseInt(hitsMatch[1]!, 10);
+        const misses = parseInt(missesMatch[1]!, 10);
+        const total = hits + misses;
+        if (total > 0) redisCacheHitRate = Math.round((hits / total) * 100);
+      }
+    }
+  } catch {
+    redisCacheHitRate = null;
+  }
+
+  /* ── Queue / connection depth (Socket.IO connected clients) ── */
+  let queueDepth = 0;
+  try {
+    const socketMod = await import("../../lib/socketio.js");
+    const getCount = (socketMod as any).getConnectedClientCount;
+    if (typeof getCount === "function") queueDepth = getCount();
+  } catch {
+    queueDepth = 0;
   }
 
   const thresholdP95Ms   = Math.max(1, parseInt(s["perf_alert_p95_ms"]      ?? "500",  10));
@@ -3073,8 +3116,13 @@ router.get("/system/health-dashboard", async (_req, res) => {
       nodeVersion: process.version,
     },
     performance: {
+      p50Ms,
       p95Ms,
+      p99Ms,
+      dbLatencyMs,
       dbQueryMs,
+      redisCacheHitRate,
+      queueDepth,
       memoryPct,
       diskPct,
       diskFreeGb,
