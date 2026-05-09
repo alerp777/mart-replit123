@@ -754,7 +754,7 @@ export default function Active() {
   const [adminMessages, setAdminMessages]          = useState<Array<{ text: string; ts: string; from: "admin" | "rider" }>>([]);
   const [showAdminChat, setShowAdminChat]          = useState(false);
   const [chatReply, setChatReply]                  = useState("");
-  const { socket: sharedSocket, setRiderPosition } = useSocket();
+  const { socket: sharedSocket, setRiderPosition, setSlowGps } = useSocket();
   const socketRef = useRef(sharedSocket);
   socketRef.current = sharedSocket;
 
@@ -911,6 +911,35 @@ export default function Active() {
     setGpsWarning(val);
   };
 
+  /* Battery-aware GPS: dynamic REST-ping interval — 5 s normal, 30 s when low battery
+     or far from next waypoint. Updated inside the watchPosition callback so it
+     reacts to real-time conditions without restarting the watcher. */
+  const batteryRef = useRef<number | undefined>(undefined);
+  const minGpsIntervalMsRef = useRef(5_000);
+  /* Mirror the latest query data into a ref so the watchPosition callback can
+     read the current order/ride without closing over a stale snapshot. */
+  const activeDataRef = useRef(data);
+  activeDataRef.current = data;
+
+  /* Set up battery monitoring for the active delivery page */
+  useEffect(() => {
+    type BatteryManager = {
+      level: number;
+      addEventListener: (ev: string, cb: () => void) => void;
+      removeEventListener: (ev: string, cb: () => void) => void;
+    };
+    let batt: BatteryManager | undefined;
+    const onLevelChange = () => { if (batt) batteryRef.current = batt.level; };
+    (navigator as unknown as { getBattery?: () => Promise<BatteryManager> }).getBattery?.()
+      .then((b) => {
+        batt = b;
+        batteryRef.current = b.level;
+        b.addEventListener("levelchange", onLevelChange);
+      })
+      .catch(() => {});
+    return () => { batt?.removeEventListener("levelchange", onLevelChange); };
+  }, []);
+
 
   useEffect(() => {
     if (data?.order && !data?.ride) setCancelTarget("order");
@@ -936,7 +965,6 @@ export default function Active() {
     if (!navigator?.geolocation) return;
 
     let lastSentTime = 0;
-    const MIN_INTERVAL_MS = 8_000;
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
@@ -945,8 +973,32 @@ export default function Active() {
         setRiderPos({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         /* Feed the shared socket position cache — heartbeat uses this instead of its own GPS call */
         setRiderPosition(pos.coords.latitude, pos.coords.longitude);
+
+        /* Battery-aware interval: slow down REST pings to 30 s when battery is
+           below 20% OR the rider is more than 2 km from the next waypoint.
+           Both conditions return to 5 s once they are no longer true. */
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const batteryLow = typeof batteryRef.current === "number" && batteryRef.current < 0.20;
+        let isFar = false;
+        const active = activeDataRef.current;
+        if (active?.order) {
+          const o = active.order as Record<string, unknown>;
+          const wLat = (o.dropoffLat ?? o.pickupLat) as number | undefined;
+          const wLng = (o.dropoffLng ?? o.pickupLng) as number | undefined;
+          if (wLat && wLng) isFar = haversineDistance(lat, lng, wLat, wLng) > 2;
+        } else if (active?.ride) {
+          const r = active.ride as Record<string, unknown>;
+          const wLat = (r.dropoffLat ?? r.pickupLat) as number | undefined;
+          const wLng = (r.dropoffLng ?? r.pickupLng) as number | undefined;
+          if (wLat && wLng) isFar = haversineDistance(lat, lng, wLat, wLng) > 2;
+        }
+        const slow = batteryLow || isFar;
+        minGpsIntervalMsRef.current = slow ? 30_000 : 5_000;
+        setSlowGps(slow);
+
         const now = Date.now();
-        if (now - lastSentTime < MIN_INTERVAL_MS) return;
+        if (now - lastSentTime < minGpsIntervalMsRef.current) return;
         lastSentTime = now;
         /* Detect client-side mock GPS: accuracy === 0 is impossible with real hardware sensors.
            Suppress the ping entirely to prevent spoofed coordinates reaching the server. */

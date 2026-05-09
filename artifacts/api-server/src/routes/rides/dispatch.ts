@@ -10,6 +10,11 @@ import {
 
 const router = Router();
 
+/* In-memory attempt counter keyed by ride ID.
+   Incremented each time broadcastRide is called for a ride.
+   Entries are deleted when the ride leaves the searching state. */
+const _dispatchAttemptCounts = new Map<string, number>();
+
 let dispatchCycleRunning = false;
 async function runDispatchCycle() {
   if (dispatchCycleRunning) return;
@@ -46,6 +51,7 @@ async function runDispatchCycle() {
         const elapsedSec = (Date.now() - createdMs) / 1000;
 
         if (elapsedSec > totalTimeoutSec) {
+          _dispatchAttemptCounts.delete(ride.id);
           await db.transaction(async (tx) => {
             const [upd] = await tx.update(ridesTable)
               .set({ status: "expired", updatedAt: new Date() })
@@ -98,7 +104,62 @@ async function runDispatchCycle() {
         const currentRound = Math.floor(elapsedSec / DISPATCH_ROUND_INTERVAL_SEC);
         const loopCount = ride.dispatchLoopCount ?? 0;
 
+        /* Hard cap: if broadcastRide has been called 5 times for this ride
+           without finding a rider, give up immediately rather than looping
+           further. This prevents blocking the cycle on large but unresponsive
+           rider pools (Task #2 — dispatch cap). */
+        const MAX_BROADCAST_ATTEMPTS = 5;
+        const attemptsSoFar = _dispatchAttemptCounts.get(ride.id) ?? 0;
+        if (attemptsSoFar >= MAX_BROADCAST_ATTEMPTS) {
+          _dispatchAttemptCounts.delete(ride.id);
+          await db.transaction(async (tx) => {
+            const [upd] = await tx.update(ridesTable)
+              .set({ status: "no_riders", updatedAt: new Date() })
+              .where(and(eq(ridesTable.id, ride.id), isNull(ridesTable.riderId)))
+              .returning({ id: ridesTable.id });
+            if (!upd) return;
+
+            if (ride.paymentMethod === "wallet") {
+              const rideRef = `ride:${ride.id}`;
+              const txns = await tx.select({ type: walletTransactionsTable.type, amount: walletTransactionsTable.amount })
+                .from(walletTransactionsTable)
+                .where(and(
+                  eq(walletTransactionsTable.userId, ride.userId),
+                  eq(walletTransactionsTable.reference, rideRef),
+                ));
+              let netDebit = 0;
+              for (const t of txns) {
+                const a = parseFloat(t.amount);
+                if (t.type === "debit") netDebit += a; else if (t.type === "credit") netDebit -= a;
+              }
+              if (netDebit > 0) {
+                await tx.update(usersTable)
+                  .set({ walletBalance: sql`wallet_balance + ${netDebit.toFixed(2)}`, updatedAt: new Date() })
+                  .where(eq(usersTable.id, ride.userId));
+                await tx.insert(walletTransactionsTable).values({
+                  id: generateId(), userId: ride.userId, type: "credit",
+                  amount: netDebit.toFixed(2),
+                  description: `No riders found — auto-refund #${ride.id.slice(-6).toUpperCase()}`,
+                  reference: rideRef,
+                });
+              }
+            }
+          });
+          const capLang = await getUserLanguage(ride.userId);
+          await db.insert(notificationsTable).values({
+            id: generateId(), userId: ride.userId,
+            title: t("noRequests", capLang),
+            body: t("searching_driver", capLang),
+            type: "ride", icon: "close-circle-outline",
+          }).catch((e: Error) => logger.warn({ rideId: ride.id, userId: ride.userId, err: e.message }, "[dispatch-engine] attempt-cap no-riders notification insert failed"));
+          logger.info({ rideId: ride.id, attempts: attemptsSoFar }, "[dispatch-engine] attempt cap reached — ride set to no_riders");
+          emitRideUpdate(ride.id);
+          await cleanupNotifiedRiders(ride.id);
+          continue;
+        }
+
         if (currentRound >= MAX_DISPATCH_ROUNDS) {
+          _dispatchAttemptCounts.delete(ride.id);
           await db.transaction(async (tx) => {
             const [upd] = await tx.update(ridesTable)
               .set({ status: "no_riders", updatedAt: new Date() })
@@ -150,6 +211,7 @@ async function runDispatchCycle() {
             .where(and(eq(ridesTable.id, ride.id), isNull(ridesTable.riderId)));
         }
 
+        _dispatchAttemptCounts.set(ride.id, attemptsSoFar + 1);
         await broadcastRide(ride.id);
       } catch (rideErr) {
         logger.error(`[dispatch-engine] Error processing ride ${ride.id}:`, rideErr);

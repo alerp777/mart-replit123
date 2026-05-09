@@ -125,6 +125,19 @@ export function registerActionExecutor(fn: ActionExecutor): void {
   _executor = fn;
 }
 
+type ActionSuccessCallback = (action: QueuedAction) => void;
+const _successCallbacks = new Map<ActionType, Set<ActionSuccessCallback>>();
+
+export function subscribeActionSuccess(type: ActionType, fn: ActionSuccessCallback): () => void {
+  if (!_successCallbacks.has(type)) _successCallbacks.set(type, new Set());
+  _successCallbacks.get(type)!.add(fn);
+  return () => { _successCallbacks.get(type)?.delete(fn); };
+}
+
+function notifyActionSuccess(action: QueuedAction): void {
+  _successCallbacks.get(action.type)?.forEach(fn => { try { fn(action); } catch {} });
+}
+
 export async function syncQueue(): Promise<void> {
   if (_syncing || !_executor) return;
   _syncing = true;
@@ -140,6 +153,7 @@ export async function syncQueue(): Promise<void> {
       try {
         await _executor(action);
         await removeAction(action.id);
+        notifyActionSuccess(action);
       } catch {
         await bumpRetryCount(action).catch(() => {});
         break; /* stop here; retry next sync cycle to preserve ordering */
@@ -194,4 +208,9 @@ export function useQueueStatus() {
 
 if (typeof window !== "undefined") {
   window.addEventListener("online", () => { syncQueue().catch(() => {}); });
+  /* Periodic retry every 30 seconds — covers Android WebViews that skip the
+     `online` event, and any OS where the event fires unreliably after roaming. */
+  setInterval(() => {
+    if (navigator.onLine) { syncQueue().catch(() => {}); }
+  }, 30_000);
 }

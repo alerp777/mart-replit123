@@ -150,6 +150,17 @@ function clearTokens(): void {
   _inMemoryRefreshToken = "";
 }
 
+/* ── Module-level token-refresh callbacks ─────────────────────────────────────
+   Registered by socket.tsx (and any other consumer) to be notified immediately
+   when a token refresh succeeds — enabling instant socket reconnection rather
+   than waiting for the next polling tick. */
+const _tokenRefreshCallbacks = new Set<() => void>();
+
+export function registerTokenRefreshCallback(fn: () => void): () => void {
+  _tokenRefreshCallbacks.add(fn);
+  return () => { _tokenRefreshCallbacks.delete(fn); };
+}
+
 /* ── Module-level logout callback ─────────────────────────────────────────────
    The auth context registers this callback at mount time. Using a module-level
    reference avoids coupling to React's event system and guarantees the logout
@@ -219,6 +230,7 @@ async function _doRefresh(): Promise<RefreshResult> {
     if (data.token) {
       sessionSet(data.token);
       sweepLegacyTokens();
+      _tokenRefreshCallbacks.forEach(fn => { try { fn(); } catch {} });
     }
     if (data.refreshToken) localSet(data.refreshToken);
     return "refreshed";

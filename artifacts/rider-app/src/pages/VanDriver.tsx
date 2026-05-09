@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bus, Users, CheckCircle, Clock, ChevronRight, AlertCircle, Play, Square, Navigation, TrendingUp, Wallet, Timer } from "lucide-react";
 import { apiFetch } from "../lib/api";
-import { enqueueAction } from "../lib/offline/queueManager";
+import { enqueueAction, subscribeActionSuccess } from "../lib/offline/queueManager";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../lib/auth";
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
@@ -139,6 +139,10 @@ export default function VanDriver() {
   const [riderPos, setRiderPos] = useState<[number, number] | null>(null);
   const gpsIntervalRef = useRef<number | null>(null);
 
+  /* Optimistic "Trip Ending…" state shown immediately when completeTrip fails
+     offline so the screen never freezes waiting for the queue to sync. */
+  const [tripEndingOffline, setTripEndingOffline] = useState(false);
+
   const { data: schedules = [], isLoading } = useQuery<VanSchedule[]>({
     queryKey: ["van-driver-today"],
     queryFn: fetchTodaySchedules,
@@ -191,6 +195,7 @@ export default function VanDriver() {
       qc.invalidateQueries({ queryKey: ["van-passengers"] });
       qc.invalidateQueries({ queryKey: ["van-driver-today"] });
       stopGpsBroadcast();
+      setTripEndingOffline(false);
       setSelectedSchedule(null);
     },
     onError: (e: Error) => {
@@ -198,10 +203,30 @@ export default function VanDriver() {
       const looksLikeNetErr = /network|fetch|timeout|offline/i.test(e?.message || "");
       if (looksLikeNetErr && selectedSchedule) {
         enqueueAction("complete_trip", selectedSchedule.id, { date: selectedSchedule.date }).catch(() => {});
+        /* Immediately show optimistic "Trip Ending…" state so the UI never appears
+           frozen while the action waits in the offline queue to sync. */
+        setTripEndingOffline(true);
+      } else {
+        setError(e.message);
       }
-      setError(e.message);
     },
   });
+
+  /* When the offline queue replays complete_trip successfully, reset the
+     optimistic state and refresh the schedule/passenger data. */
+  useEffect(() => {
+    if (!selectedSchedule) return;
+    const scheduleId = selectedSchedule.id;
+    const unsub = subscribeActionSuccess("complete_trip", (action) => {
+      if (action.entityId !== scheduleId) return;
+      setTripEndingOffline(false);
+      stopGpsBroadcast();
+      qc.invalidateQueries({ queryKey: ["van-driver-today"] });
+      qc.invalidateQueries({ queryKey: ["van-passengers"] });
+      setSelectedSchedule(null);
+    });
+    return unsub;
+  }, [selectedSchedule?.id]);
 
   /* G6: Surface geolocation errors to the UI rather than swallowing them.
      G7: Use an in-flight flag so the 5s interval never queues a second
@@ -596,18 +621,27 @@ export default function VanDriver() {
 
             {/* End Trip button */}
             {isTripInProgress && passengers.some(p => p.status === "confirmed" || p.status === "boarded") && (
-              <button
-                onClick={() => {
-                  if (confirm("End the trip? This will complete all boarded passengers and stop GPS broadcasting.")) {
-                    completeMut.mutate();
-                  }
-                }}
-                disabled={completeMut.isPending}
-                className="w-full bg-red-600 text-white font-semibold py-3 rounded-xl hover:bg-red-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                <Square className="w-5 h-5" />
-                {completeMut.isPending ? "Ending…" : "End Trip"}
-              </button>
+              <>
+                {tripEndingOffline && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2 text-amber-800 text-sm">
+                    <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-500" />
+                    <span>No connection — will sync automatically when back online.</span>
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    if (tripEndingOffline) return;
+                    if (confirm("End the trip? This will complete all boarded passengers and stop GPS broadcasting.")) {
+                      completeMut.mutate();
+                    }
+                  }}
+                  disabled={completeMut.isPending || tripEndingOffline}
+                  className="w-full bg-red-600 text-white font-semibold py-3 rounded-xl hover:bg-red-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  <Square className="w-5 h-5" />
+                  {completeMut.isPending || tripEndingOffline ? "Trip Ending…" : "End Trip"}
+                </button>
+              </>
             )}
           </>
         )}
