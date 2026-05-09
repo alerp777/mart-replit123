@@ -5,7 +5,7 @@ import { z } from "zod/v4";
 export const platformSettingsTable = pgTable("platform_settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
-  label: text("label").notNull(),
+  label: text("label"),
   category: text("category").notNull().default("general"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

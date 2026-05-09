@@ -1,0 +1,67 @@
+Yeh aik final, "No-Nonsense" professional directive hai jo aapke AI Developer ko milegi. Is mein aapki pichli saari instructions aur audit report ke 24 critical points ko integrate kar diya gaya hai taake koi loophole baaki na rahe.
+
+Isko aap directly copy karke bhej sakte hain:
+
+🚀 SYSTEM HARDENING & PRODUCTION-READY DIRECTIVE
+To: Backend Development Team
+
+Project: Alerpa (Super-App Ecosystem)
+
+Priority: URGENT / CRITICAL
+
+Context: The recent audit of the API-Server has revealed significant architectural flaws and security vulnerabilities. This document serves as a mandatory checklist to resolve these issues before any further deployment. The goal is 100% stability, zero data loss, and "Fail-Closed" security.
+
+1. 🔴 CRITICAL SYSTEM & PROCESS LOGIC (Immediate Fix Required)
+Dispatch Engine: Initialize startDispatchEngine() in index.ts/app.ts. Currently, the ride-hailing loop is dead.
+
+Boot Sequence: Refactor the startup flow. server.listen() must ONLY be called after runStartupTasks() (Migrations & RBAC seeding) has fully resolved.
+
+Zombie Process Prevention: Fix uncaughtException in index.ts. On failure, the process must log the error and exit (process.exit(1)).
+
+Security Fail-Closed:
+
+Set otp_require_when_no_provider to ON by default. If SMS/WhatsApp gateways fail, the system must deny login, not bypass OTP.
+
+verifyTokenFamily middleware must return a 401/500 error if the DB check fails. No more next() on error.
+
+2. 🟠 FINANCIAL INTEGRITY & RACE CONDITIONS
+Double-Refund Guard: In admin/orders.ts, implement WHERE refunded_at IS NULL for Pharmacy and Parcel orders to prevent duplicate wallet credits on double-clicks.
+
+Atomic Operations: Refactor school.ts (subscription increments) and lib/fees.ts (GST calculations) to use atomic SQL updates or Integer Arithmetic (Paisa/Cents). Stop using parseFloat(toFixed(2)).
+
+Idempotency: Implement acquireWalletIdempotency pattern in Mart/Food order creation to prevent duplicate orders during network retries.
+
+Admin Auth: Apply jti blacklisting to Admin tokens immediately. Logout must invalidate the token session-wide.
+
+3. 🟡 PERFORMANCE & DATABASE ARCHITECTURE
+N+1 Query Resolution: Audit admin/orders.ts and admin/fleet/rides.ts. Replace loops with optimized JOIN queries or IN clauses for fetching lists.
+
+Memory Management: Change multer.memoryStorage() to diskStorage or S3 streaming for video uploads to prevent OOM (Out of Memory) crashes.
+
+Indexing: * Add composite index on orders(vendor_id, status).
+
+Add index on users(deleted_at).
+
+Resource Cleanup: Implement a proper Graceful Shutdown handler that explicitly closes DB pools and Redis clients on SIGTERM/SIGINT.
+
+4. 🔵 CODE QUALITY & ENVIRONMENT GOVERNANCE
+Error Standardizing: Replace raw string error responses (e.g., "Insufficient balance") with Machine-Readable Error Codes (e.g., ERR_LOW_BALANCE).
+
+Environment Validation: Move ADMIN_CSRF_SECRET to CRITICAL_VARS. The server must not start if this is missing.
+
+Type Safety: Stop using raw strings for status enums (e.g., 'searching') in SQL queries. Use centralized Enums/Constants.
+
+Global Wrapper: Use a catchAsync wrapper for all route handlers in weather-config.ts, loyalty.ts, etc., to ensure no request is left hanging.
+
+🛡️ FINAL COMPLIANCE CHECKLIST
+[ ] No console.log or debug remnants in production build.
+
+[ ] GPS Spoofing detection implemented for Rider App.
+
+[ ] Admin CSRF protection verified.
+
+[ ] Wallet balance logic uses absolute database truth, not stale cache.
+
+[ ] All PII (Phone numbers) encrypted at rest.
+
+Required Action: Please provide a Technical Implementation Report once these are resolved, detailing the specific fix for each of the 24 audit points. We will perform a stress test immediately after these fixes.
