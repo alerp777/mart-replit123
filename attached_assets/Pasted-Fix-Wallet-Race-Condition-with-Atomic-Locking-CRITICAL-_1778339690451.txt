@@ -1,0 +1,99 @@
+Fix Wallet Race Condition with Atomic Locking (CRITICAL)
+Files to modify:
+
+artifacts/api-server/src/services/wallet.ts
+artifacts/api-server/src/routes/wallet.ts (any endpoints that deduct balance)
+What's broken: Wallet balance updates are not atomic. This sequence can happen:
+
+User A has 100 PKR
+Request 1: Read balance (100) → check >= 50 ✓ → PAUSE
+Request 2: Read balance (100) → check >= 90 ✓ → UPDATE to 10 ✓
+Request 1: Resume → UPDATE to 50 ✓
+Final balance: 50 (but should be negative! User was double-charged)
+This is a CRITICAL race condition that causes double-spend bugs and financial loss.
+
+What to do:
+
+Rewrite all wallet deduction logic to use a SINGLE atomic transaction with row-level locking
+Use SELECT ... FOR UPDATE to lock the wallet row
+All balance checks and updates happen in a single transaction (no interleaving possible)
+Use Drizzle db.transaction() with explicit SQL for the lock
+Database pattern (SQL):
+
+SQL
+BEGIN;
+SELECT balance FROM wallets WHERE user_id = $1 FOR UPDATE;
+-- App checks: if balance >= amount
+UPDATE wallets SET balance = balance - $amount WHERE user_id = $1;
+COMMIT;
+Code pattern (Drizzle + TypeScript):
+
+TypeScript
+// services/wallet.ts
+export async function deductWalletBalance(
+  userId: string,
+  amount: number,
+  reason: string
+) {
+  return await db.transaction(async (tx) => {
+    // 1. Lock the wallet row
+    const walletLocked = await tx.execute(sql`
+      SELECT ${wallets.balance} FROM ${wallets} 
+      WHERE ${eq(wallets.userId, userId)}
+      FOR UPDATE
+    `);
+    
+    if (!walletLocked.length) {
+      throw new Error('Wallet not found');
+    }
+    
+    const currentBalance = walletLocked[0].balance;
+    
+    // 2. Atomic check + update
+    if (currentBalance < amount) {
+      throw new Error('Insufficient balance');
+    }
+    
+    // 3. Deduct (while row is locked)
+    const result = await tx.update(wallets)
+      .set({ balance: sql`${wallets.balance} - ${amount}` })
+      .where(eq(wallets.userId, userId))
+      .returning({ newBalance: wallets.balance });
+    
+    // 4. Audit log
+    await tx.insert(walletAuditLogs).values({
+      userId,
+      type: 'DEDUCTION',
+      amount,
+      reason,
+      newBalance: result[0].newBalance,
+      timestamp: new Date()
+    });
+    
+    return result[0];
+  });
+}
+
+// Example route handler
+app.post('/api/wallet/send', async (req, res) => {
+  try {
+    const { recipientId, amount } = req.body;
+    const senderId = req.user.id;
+    
+    // This is now atomic — no race condition possible
+    await deductWalletBalance(senderId, amount, `send_to_${recipientId}`);
+    await creditWalletBalance(recipientId, amount, `receive_from_${senderId}`);
+    
+    res.json({ success: true, message: 'Payment sent' });
+  } catch (err) {
+    logger.error('[WALLET] Transaction failed', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+Deliverable:
+
+Complete updated wallet.ts service with atomic transactions
+Show SELECT FOR UPDATE locking in all deduction paths
+List ALL wallet-related endpoints that need updating
+Confirm no race conditions possible
+Show audit logging for all transactions

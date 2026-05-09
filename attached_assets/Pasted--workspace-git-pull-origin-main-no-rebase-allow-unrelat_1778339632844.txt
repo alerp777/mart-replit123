@@ -1,0 +1,69 @@
+~/workspace$ git pull origin main --no-rebase --allow-unrelated-histories
+From https://github.com/alerp777/mart-replit123
+ * branch            main       -> FETCH_HEAD
+Auto-merging artifacts/admin/src/pages/otp-control.tsx
+CONFLICT (add/add): Merge conflict in artifacts/admin/src/pages/otp-control.tsx
+Auto-merging artifacts/admin/src/pages/security.tsx
+CONFLICT (add/add): Merge conflict in artifacts/admin/src/pages/security.tsx
+Auto-merging artifacts/admin/src/pages/settings-render.tsx
+CONFLICT (add/add): Merge conflict in artifacts/admin/src/pages/settings-render.tsx
+Auto-merging artifacts/admin/src/pages/users.tsx
+CONFLICT (add/add): Merge conflict in artifacts/admin/src/pages/users.tsx
+Auto-merging artifacts/ajkmart/tsconfig.json
+CONFLICT (add/add): Merge conflict in artifacts/ajkmart/tsconfig.json
+Auto-merging artifacts/api-server/src/app.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/app.ts
+Auto-merging artifacts/api-server/src/middleware/security.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/middleware/security.ts
+Auto-merging artifacts/api-server/src/routes/admin.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/routes/admin.ts
+Auto-merging artifacts/api-server/src/routes/admin/experiments.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/routes/admin/experiments.ts
+Auto-merging artifacts/api-server/src/routes/admin/loyalty.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/routes/admin/loyalty.ts
+Auto-merging artifacts/api-server/src/routes/admin/otp.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/routes/admin/otp.ts
+Auto-merging artifacts/api-server/src/routes/admin/popups.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/routes/admin/popups.ts
+Auto-merging artifacts/api-server/src/routes/admin/security.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/routes/admin/security.ts
+Auto-merging artifacts/api-server/src/routes/auth/helpers.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/routes/auth/helpers.ts
+Auto-merging artifacts/api-server/src/routes/auth/index.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/routes/auth/index.ts
+Auto-merging artifacts/api-server/src/routes/business-rules.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/routes/business-rules.ts
+Auto-merging artifacts/api-server/src/routes/experiments.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/routes/experiments.ts
+Auto-merging artifacts/api-server/src/routes/index.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/routes/index.ts
+Auto-merging artifacts/api-server/src/routes/loyalty-full.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/routes/loyalty-full.ts
+Auto-merging artifacts/api-server/src/routes/popups.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/routes/popups.ts
+Auto-merging artifacts/api-server/src/routes/seed.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/routes/seed.ts
+Auto-merging artifacts/api-server/src/routes/whatsapp-delivery.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/routes/whatsapp-delivery.ts
+Auto-merging artifacts/api-server/src/services/admin-notification.service.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/services/admin-notification.service.ts
+Auto-merging artifacts/api-server/src/services/communicationAI.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/services/communicationAI.ts
+Auto-merging artifacts/api-server/src/services/email.ts
+CONFLICT (add/add): Merge conflict in artifacts/api-server/src/services/email.ts
+Auto-merging lib/db/drizzle/meta/_journal.json
+CONFLICT (add/add): Merge conflict in lib/db/drizzle/meta/_journal.json
+Auto-merging lib/db/src/schema/index.ts
+CONFLICT (add/add): Merge conflict in lib/db/src/schema/index.ts
+Auto-merging lib/db/src/schema/loyalty_campaigns.ts
+CONFLICT (add/add): Merge conflict in lib/db/src/schema/loyalty_campaigns.ts
+Auto-merging lib/db/src/schema/loyalty_rewards.ts
+CONFLICT (add/add): Merge conflict in lib/db/src/schema/loyalty_rewards.ts
+Auto-merging lib/db/src/schema/refresh_tokens.ts
+CONFLICT (add/add): Merge conflict in lib/db/src/schema/refresh_tokens.ts
+Auto-merging package.json
+CONFLICT (add/add): Merge conflict in package.json
+Auto-merging scripts/secure-start.mjs
+CONFLICT (add/add): Merge conflict in scripts/secure-start.mjs
+Automatic merge failed; fix conflicts and then commit the result.
+~/workspace$ 
