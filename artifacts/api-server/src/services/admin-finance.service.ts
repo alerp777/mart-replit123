@@ -193,17 +193,34 @@ export class FinanceService {
           throw new Error("Insufficient wallet balance at time of processing (possible concurrent request).");
         }
       } else {
+        const settings = await getPlatformSettings();
+        const maxBalance = parseFloat(settings["wallet_max_balance"] ?? "50000");
+
+        const currentBalance = parseFloat(user.walletBalance || "0");
+        if (currentBalance + input.amount > maxBalance) {
+          throw new Error(
+            `Wallet balance limit is Rs. ${maxBalance}. Credit would exceed the limit.`
+          );
+        }
+
         [updated] = await tx
           .update(usersTable)
           .set({
             walletBalance: sql`wallet_balance + ${amtFixed}`,
             updatedAt: new Date(),
           })
-          .where(eq(usersTable.id, input.userId))
+          .where(
+            and(
+              eq(usersTable.id, input.userId),
+              sql`CAST(wallet_balance AS numeric) + ${input.amount} <= ${maxBalance}`
+            )
+          )
           .returning({ walletBalance: usersTable.walletBalance });
 
         if (!updated) {
-          throw new Error("User not found");
+          throw new Error(
+            `Wallet balance limit is Rs. ${maxBalance}. Credit would exceed the limit.`
+          );
         }
       }
 
