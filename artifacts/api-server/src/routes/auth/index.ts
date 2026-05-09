@@ -527,11 +527,11 @@ router.post("/send-merge-otp", async (req, res) => {
   if (looksLikePhone) {
     const phone = canonicalizePhone(identifier);
     const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phone, phone)).limit(1);
-    if (existing) { res.status(409).json({ error: "This phone number is already linked to another account" }); return; }
+    if (existing) { sendError(res, "This phone number is already linked to another account", 409); return; }
   } else {
     const email = identifier.trim().toLowerCase();
     const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email)).limit(1);
-    if (existing) { res.status(409).json({ error: "This email is already linked to another account" }); return; }
+    if (existing) { sendError(res, "This email is already linked to another account", 409); return; }
   }
 
   const otp = generateSecureOtp();
@@ -609,7 +609,7 @@ router.post("/merge-account", async (req, res) => {
     if (currentUser.phone === phone) { sendError(res, "This phone is already linked to your account", 400); return; }
 
     const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phone, phone)).limit(1);
-    if (existing) { res.status(409).json({ error: "This phone number is already linked to another account" }); return; }
+    if (existing) { sendError(res, "This phone number is already linked to another account", 409); return; }
 
     await db.update(usersTable).set({ phone, encryptedPhone: tryEncrypt(phone), mergeOtpCode: null, mergeOtpExpiry: null, phoneVerified: true, pendingMergeIdentifier: null, updatedAt: new Date() }).where(eq(usersTable.id, auth.userId));
 
@@ -620,7 +620,7 @@ router.post("/merge-account", async (req, res) => {
     if (currentUser.email === email) { sendError(res, "This email is already linked to your account", 400); return; }
 
     const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email)).limit(1);
-    if (existing) { res.status(409).json({ error: "This email is already linked to another account" }); return; }
+    if (existing) { sendError(res, "This email is already linked to another account", 409); return; }
 
     await db.update(usersTable).set({ email, encryptedEmail: tryEncrypt(email), mergeOtpCode: null, mergeOtpExpiry: null, emailVerified: true, pendingMergeIdentifier: null, updatedAt: new Date() }).where(eq(usersTable.id, auth.userId));
 
@@ -1451,7 +1451,7 @@ router.post("/vendor-register", async (req, res) => {
       .where(sql`lower(${usersTable.username}) = ${normalizedUsername} AND ${usersTable.id} != ${auth.userId}`)
       .limit(1);
     if (existing) {
-      res.status(409).json({ error: "Username is already taken" });
+      sendError(res, "Username is already taken", 409);
       return;
     }
   }
@@ -1579,21 +1579,21 @@ router.post("/validate-token", async (req, res) => {
 
   try {
     const payload = verifyUserJwt(token);
-    if (!payload) { res.status(401).json({ valid: false, error: "Invalid or expired token" }); return; }
+    if (!payload) { sendUnauthorized(res, "Invalid or expired token"); return; }
 
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, payload.userId)).limit(1);
-    if (!user)         { res.status(401).json({ valid: false, error: "User not found" }); return; }
-    if (user.isBanned) { res.status(403).json({ valid: false, error: "Account suspended" }); return; }
-    if (!user.isActive){ res.status(403).json({ valid: false, error: "Account inactive" }); return; }
+    if (!user)         { sendUnauthorized(res, "User not found"); return; }
+    if (user.isBanned) { sendForbidden(res, "Account suspended"); return; }
+    if (!user.isActive){ sendForbidden(res, "Account inactive"); return; }
 
     if ((payload.tokenVersion ?? 0) !== (user.tokenVersion ?? 0)) {
-      res.status(401).json({ valid: false, error: "Token revoked" }); return;
+      sendUnauthorized(res, "Token revoked"); return;
     }
 
     const expiresAt = payload.exp ? new Date(payload.exp * 1000).toISOString() : null;
     res.json({ valid: true, expiresAt, userId: user.id, role: user.roles });
   } catch {
-    res.status(401).json({ valid: false, error: "Token validation failed" });
+    sendUnauthorized(res, "Token validation failed");
   }
 });
 
@@ -1813,7 +1813,7 @@ router.post("/check-available", async (req, res) => {
   const ip = getClientIp(req);
   const rlCheck = await checkAvailableRateLimit(ip, 20, 10);
   if (rlCheck.limited) {
-    res.status(429).json({ error: `Too many requests. Try again in ${rlCheck.minutesLeft} minute(s).` }); return;
+    sendTooManyRequests(res, `Too many requests. Try again in ${rlCheck.minutesLeft} minute(s).`); return;
   }
 
   const { phone, email, username } = req.body;
@@ -1885,7 +1885,7 @@ router.post("/send-email-otp", verifyCaptcha, async (req, res) => {
   const lockoutMinutes = parseInt(settings["security_lockout_minutes"] ?? "30", 10);
   const lockout = await checkLockout(normalized, maxAttempts, lockoutMinutes);
   if (lockout.locked) {
-    res.status(429).json({ error: `Too many attempts. Try again in ${lockout.minutesLeft} minute(s).` }); return;
+    sendTooManyRequests(res, `Too many attempts. Try again in ${lockout.minutesLeft} minute(s).`); return;
   }
 
   /* ── Per-email OTP resend cooldown — prevents inbox flooding ──
@@ -1971,7 +1971,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
 
   const lockout = await checkLockout(normalized, maxAttempts, lockoutMinutes);
   if (lockout.locked) {
-    res.status(429).json({ error: `Account locked. Try again in ${lockout.minutesLeft} minute(s).` }); return;
+    sendTooManyRequests(res, `Account locked. Try again in ${lockout.minutesLeft} minute(s).`); return;
   }
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.email, normalized)).limit(1);
@@ -2024,7 +2024,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
     const remaining = maxAttempts - updated.attempts;
     addAuditEntry({ action: "email_otp_failed", ip, details: `Wrong email OTP for: ${normalized}`, result: "fail" });
     if (updated.lockedUntil) {
-      res.status(429).json({ error: `Too many failed attempts. Locked for ${lockoutMinutes} minutes.` });
+      sendTooManyRequests(res, `Too many failed attempts. Locked for ${lockoutMinutes} minutes.`);
     } else {
       res.status(401).json({ error: `Invalid OTP. ${remaining} attempt(s) remaining.`, attemptsRemaining: remaining });
     }
@@ -2165,7 +2165,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
   if (lockoutEnabled) {
     const lockout = await checkLockout(lockoutKey, maxAttempts, lockoutMinutes);
     if (lockout.locked) {
-      res.status(429).json({ error: `Account locked. Try again in ${lockout.minutesLeft} minute(s).` }); return;
+      sendTooManyRequests(res, `Account locked. Try again in ${lockout.minutesLeft} minute(s).`); return;
     }
   }
 
@@ -2200,9 +2200,9 @@ async function handleUnifiedLogin(req: Request, res: any) {
     const updated = await recordFailedAttempt(lockoutKey, maxAttempts, lockoutMinutes);
     addAuditEntry({ action: "unified_login_failed", ip, details: `Wrong password (${idType}): ${lookupKey}`, result: "fail" });
     if (lockoutEnabled && updated.lockedUntil) {
-      res.status(429).json({ error: `Too many failed attempts. Locked for ${lockoutMinutes} minutes.` });
+      sendTooManyRequests(res, `Too many failed attempts. Locked for ${lockoutMinutes} minutes.`);
     } else if (lockoutEnabled) {
-      res.status(401).json({ error: `Invalid credentials. ${Math.max(0, maxAttempts - updated.attempts)} attempt(s) remaining.` });
+      sendUnauthorized(res, `Invalid credentials. ${Math.max(0, maxAttempts - updated.attempts)} attempt(s) remaining.`);
     } else {
       sendUnauthorized(res, "Invalid credentials");
     }
@@ -2330,7 +2330,7 @@ router.post("/login/verify-otp", async (req, res) => {
   if (lockoutEnabled) {
     const lockout = await checkLockout(lockoutKey, maxAttempts, lockoutMinutes);
     if (lockout.locked) {
-      res.status(429).json({ error: `Account locked. Try again in ${lockout.minutesLeft} minute(s).` }); return;
+      sendTooManyRequests(res, `Account locked. Try again in ${lockout.minutesLeft} minute(s).`); return;
     }
   }
 
@@ -2351,7 +2351,7 @@ router.post("/login/verify-otp", async (req, res) => {
     const updated = await recordFailedAttempt(lockoutKey, maxAttempts, lockoutMinutes);
     writeAuthAuditLog("otp_failed", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { method: "password_login_otp" } });
     if (lockoutEnabled && updated.lockedUntil) {
-      res.status(429).json({ error: `Too many failed attempts. Account locked for ${lockoutMinutes} minutes.` });
+      sendTooManyRequests(res, `Too many failed attempts. Account locked for ${lockoutMinutes} minutes.`);
     } else if (lockoutEnabled) {
       const remaining = Math.max(0, maxAttempts - updated.attempts);
       res.status(401).json({ error: `Invalid or expired OTP. ${remaining} attempt(s) remaining.`, attemptsRemaining: remaining });
@@ -2431,7 +2431,7 @@ router.post("/complete-profile", async (req, res) => {
     if (normalized !== user.email) {
       const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, normalized)).limit(1);
       if (existing && existing.id !== userId) {
-        res.status(409).json({ error: "Is email se pehle se ek account bana hua hai" }); return;
+        sendError(res, "Is email se pehle se ek account bana hua hai", 409); return;
       }
     }
     updates.email = normalized;
@@ -2443,7 +2443,7 @@ router.post("/complete-profile", async (req, res) => {
     if (clean !== user.username) {
       const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(sql`lower(${usersTable.username}) = ${clean}`).limit(1);
       if (existing && existing.id !== userId) {
-        res.status(409).json({ error: "Yeh username pehle se liya hua hai" }); return;
+        sendError(res, "Yeh username pehle se liya hua hai", 409); return;
       }
     }
     updates.username = clean;
@@ -2762,7 +2762,7 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
     const normalizedEmail = email.toLowerCase().trim();
     const [existingEmail] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, normalizedEmail)).limit(1);
     if (existingEmail) {
-      res.status(409).json({ error: "An account with this email already exists" });
+      sendError(res, "An account with this email already exists", 409);
       return;
     }
   }
@@ -2773,7 +2773,7 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
     if (cleanUsername !== null && cleanUsername.length >= 3) {
       const [existingUsername] = await db.select({ id: usersTable.id }).from(usersTable).where(sql`lower(${usersTable.username}) = ${cleanUsername}`).limit(1);
       if (existingUsername) {
-        res.status(409).json({ error: "This username is already taken" });
+        sendError(res, "This username is already taken", 409);
         return;
       }
     } else {
@@ -2988,7 +2988,7 @@ router.post("/forgot-password", verifyCaptcha, sharedValidateBody(forgotPassword
   const lockoutKey = `reset:${user.id}`;
   const lockout = await checkLockout(lockoutKey, maxAttempts, lockoutMinutes);
   if (lockout.locked) {
-    res.status(429).json({ error: `Too many attempts. Try again in ${lockout.minutesLeft} minute(s).` });
+    sendTooManyRequests(res, `Too many attempts. Try again in ${lockout.minutesLeft} minute(s).`);
     return;
   }
 
@@ -3164,7 +3164,7 @@ router.post("/reset-password", verifyCaptcha, async (req, res) => {
   const lockoutKey = `reset:${user.id}`;
   const lockout = await checkLockout(lockoutKey, maxAttempts, lockoutMinutes);
   if (lockout.locked) {
-    res.status(429).json({ error: `Too many attempts. Try again in ${lockout.minutesLeft} minute(s).` });
+    sendTooManyRequests(res, `Too many attempts. Try again in ${lockout.minutesLeft} minute(s).`);
     return;
   }
 
@@ -3260,7 +3260,7 @@ router.post("/email-register", verifyCaptcha, async (req, res) => {
 
   const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, normalizedEmail)).limit(1);
   if (existing) {
-    res.status(409).json({ error: "An account with this email already exists" });
+    sendError(res, "An account with this email already exists", 409);
     return;
   }
 
@@ -3270,7 +3270,7 @@ router.post("/email-register", verifyCaptcha, async (req, res) => {
     if (cleanUsername !== null && cleanUsername.length >= 3) {
       const [existingUsername] = await db.select({ id: usersTable.id }).from(usersTable).where(sql`lower(${usersTable.username}) = ${cleanUsername}`).limit(1);
       if (existingUsername) {
-        res.status(409).json({ error: "This username is already taken" });
+        sendError(res, "This username is already taken", 409);
         return;
       }
     } else {
@@ -3365,7 +3365,7 @@ router.get("/verify-email", async (req, res) => {
 
   const lockout = await checkLockout(verifyKey, 5, 15);
   if (lockout.locked) {
-    res.status(429).json({ error: `Too many verification attempts. Try again in ${lockout.minutesLeft} minute(s).` });
+    sendTooManyRequests(res, `Too many verification attempts. Try again in ${lockout.minutesLeft} minute(s).`);
     return;
   }
 
@@ -3741,7 +3741,7 @@ router.get("/2fa/setup", async (req, res) => {
   if (!isAuthMethodEnabled(settings, "auth_2fa_enabled", user.roles ?? undefined)) {
     sendForbidden(res, "Two-factor authentication is currently disabled"); return;
   }
-  if (user.totpEnabled) { res.status(409).json({ error: "2FA is already enabled" }); return; }
+  if (user.totpEnabled) { sendError(res, "2FA is already enabled", 409); return; }
 
   const secret = generateTotpSecret();
   const label = user.email ?? user.phone ?? user.name ?? auth.userId;
@@ -3780,7 +3780,7 @@ router.post("/2fa/verify-setup", async (req, res) => {
   if (!isAuthMethodEnabled(settings, "auth_2fa_enabled", user.roles ?? undefined)) {
     sendForbidden(res, "Two-factor authentication is currently disabled"); return;
   }
-  if (user.totpEnabled) { res.status(409).json({ error: "2FA is already enabled" }); return; }
+  if (user.totpEnabled) { sendError(res, "2FA is already enabled", 409); return; }
 
   /* Two-phase setup: read pending secret from the in-memory map (set by /auth/2fa/setup).
      If not found the setup step was never called (or the TTL expired). */
@@ -3854,7 +3854,7 @@ router.post("/totp/enable", async (req, res) => {
   if (!isAuthMethodEnabled(settings, "auth_2fa_enabled", user.roles ?? undefined)) {
     sendForbidden(res, "Two-factor authentication is currently disabled"); return;
   }
-  if (user.totpEnabled) { res.status(409).json({ error: "2FA is already enabled" }); return; }
+  if (user.totpEnabled) { sendError(res, "2FA is already enabled", 409); return; }
 
   /* Two-phase setup: read pending secret from the in-memory map (set by /auth/2fa/setup).
      This is the canonical enable endpoint — the DB write only happens here after
@@ -4200,7 +4200,7 @@ router.post("/magic-link/send", async (req, res) => {
   if (rl && now - rl.windowStart < windowMs) {
     if (rl.count >= 3) {
       const waitMin = Math.ceil((rl.windowStart + windowMs - now) / 60000);
-      res.status(429).json({ error: `Too many magic link requests. Try again in ${waitMin} minute(s).` }); return;
+      sendTooManyRequests(res, `Too many magic link requests. Try again in ${waitMin} minute(s).`); return;
     }
     rl.count++;
   } else {
@@ -4327,7 +4327,7 @@ router.post("/change-phone/request", async (req, res) => {
 
   const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phone, phone)).limit(1);
   if (existing) {
-    res.status(409).json({ error: "This phone number is already registered to another account" }); return;
+    sendError(res, "This phone number is already registered to another account", 409); return;
   }
 
   const ip = getClientIp(req);
@@ -4388,7 +4388,7 @@ router.post("/change-phone/confirm", async (req, res) => {
 
   const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phone, phone)).limit(1);
   if (existing) {
-    res.status(409).json({ error: "This phone number is already registered to another account" }); return;
+    sendError(res, "This phone number is already registered to another account", 409); return;
   }
 
   await db.update(usersTable).set({
@@ -4551,7 +4551,7 @@ router.post("/link-google", async (req, res) => {
       .limit(1);
 
     if (conflict) {
-      res.status(409).json({ error: "This Google account is already linked to another user" });
+      sendError(res, "This Google account is already linked to another user", 409);
       return;
     }
 
@@ -4599,7 +4599,7 @@ router.post("/link-facebook", async (req, res) => {
       .limit(1);
 
     if (conflict) {
-      res.status(409).json({ error: "This Facebook account is already linked to another user" });
+      sendError(res, "This Facebook account is already linked to another user", 409);
       return;
     }
 

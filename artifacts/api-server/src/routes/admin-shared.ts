@@ -1,6 +1,30 @@
 import jwt from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
 import { logger as pinoLogger } from "../lib/logger.js";
+
+/**
+ * Resolve a JWT secret from an environment variable.
+ * Exits the process in production if the secret is absent or too short;
+ * logs a warning and uses a padded dev fallback in development.
+ */
+function resolveAdminSecret(envVar: string): string {
+  const val = process.env[envVar];
+  if (!val || val.length < 32) {
+    const msg = !val
+      ? `[admin-shared] FATAL: ${envVar} is not set. A minimum 32-character secret is required.`
+      : `[admin-shared] FATAL: ${envVar} is too short (${val.length} chars, need ≥32).`;
+    if (process.env.NODE_ENV === "production") {
+      pinoLogger.fatal(msg);
+      process.exit(1);
+    }
+    pinoLogger.warn(
+      `[admin-shared] WARNING: ${envVar} not set or too short. ` +
+      `Using unsafe dev fallback — set a strong secret before deploying.`,
+    );
+    return (val ?? "") + "dev_fallback_pad_to_32_chars_min!!";
+  }
+  return val;
+}
 import { randomBytes } from "crypto";
 import { eq } from "drizzle-orm";
 import { redisClient } from "../lib/redis.js";
@@ -162,6 +186,21 @@ export type TranslationKey = string;
 
 /* ── SECURITY CORE ─────────────────────────────────────────────────────── */
 
+const _ADMIN_JWT_SECRET = resolveAdminSecret("ADMIN_JWT_SECRET");
+const _ADMIN_REFRESH_SECRET = (() => {
+  const v = process.env.ADMIN_JWT_REFRESH_SECRET || process.env.ADMIN_REFRESH_SECRET;
+  if (!v || v.length < 32) {
+    const key = "ADMIN_JWT_REFRESH_SECRET / ADMIN_REFRESH_SECRET";
+    const msg = !v
+      ? `[admin-shared] FATAL: ${key} is not set. A minimum 32-character secret is required.`
+      : `[admin-shared] FATAL: ${key} is too short (${v.length} chars, need ≥32).`;
+    if (process.env.NODE_ENV === "production") { pinoLogger.fatal(msg); process.exit(1); }
+    pinoLogger.warn(`[admin-shared] WARNING: ${key} not set or too short. Using unsafe dev fallback.`);
+    return (v ?? "") + "dev_fallback_pad_to_32_chars_min!!";
+  }
+  return v;
+})();
+
 export function signAdminJwt(
   adminId: string | null,
   role: string,
@@ -169,24 +208,20 @@ export function signAdminJwt(
   expiresInHrs: number = ADMIN_TOKEN_TTL_HRS,
   permissions: string[] = [],
 ): string {
-  const secret = process.env.ADMIN_JWT_SECRET || "admin-secret-dev";
   return jwt.sign(
     { adminId, role, name, permissions, type: "admin" },
-    secret,
+    _ADMIN_JWT_SECRET,
     { expiresIn: `${expiresInHrs}h` },
   );
 }
 
 export function signAdminRefreshToken(adminId: string | null, role: string): string {
-  const secret = process.env.ADMIN_JWT_REFRESH_SECRET
-    || process.env.ADMIN_REFRESH_SECRET
-    || "admin-refresh-secret-dev";
-  return jwt.sign({ adminId, role }, secret, { expiresIn: `${ADMIN_REFRESH_TTL_DAYS}d` });
+  return jwt.sign({ adminId, role }, _ADMIN_REFRESH_SECRET, { expiresIn: `${ADMIN_REFRESH_TTL_DAYS}d` });
 }
 
 export function verifyAdminJwt(token: string): AdminPayload | null {
   try {
-    const secret = process.env.ADMIN_JWT_SECRET || "admin-secret-dev";
+    const secret = _ADMIN_JWT_SECRET;
     const payload = jwt.verify(token, secret) as jwt.JwtPayload;
     return {
       adminId:     (payload["adminId"] as string | null) ?? null,
@@ -225,10 +260,9 @@ export const adminAuth = (req: AdminRequest, res: Response, next: NextFunction):
   }
 
   const token = authHeader.split(" ")[1]!;
-  const secret = process.env.ADMIN_JWT_SECRET || "admin-secret-dev";
 
   try {
-    const payload = jwt.verify(token, secret) as {
+    const payload = jwt.verify(token, _ADMIN_JWT_SECRET) as {
       adminId?: string | null;
       role?: string;
       name?: string;
