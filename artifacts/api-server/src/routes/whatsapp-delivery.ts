@@ -1,8 +1,20 @@
 import { Router } from "express";
+import { z } from "zod";
 import { Pool } from "pg";
 import { buildPgPoolConfig } from "@workspace/db/connection-url";
-import { sendSuccess, sendError } from "../lib/response.js";
+import { sendSuccess, sendError, sendValidationError } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
+
+const deliveryLogQuerySchema = z.object({
+  page:   z.coerce.number().int().min(1).optional().default(1),
+  limit:  z.coerce.number().int().min(1).max(100).optional().default(50),
+  status: z.enum(["pending", "sent", "failed", "delivered"]).optional(),
+  phone:  z.string().max(30).optional(),
+});
+
+const retryBodySchema = z.object({
+  messageId: z.string().min(1, "messageId is required"),
+});
 
 const router = Router();
 
@@ -77,14 +89,17 @@ router.get("/health", async (_req, res) => {
 });
 
 router.get("/delivery-log", async (req, res) => {
+  const q = deliveryLogQuerySchema.safeParse(req.query);
+  if (!q.success) {
+    sendValidationError(res, q.error.errors.map(e => e.message).join("; "));
+    return;
+  }
+
   const pool = getPool();
   if (!pool) { sendError(res, "Database not configured", 503); return; }
 
-  const page   = Math.max(1, parseInt(String(req.query["page"]   ?? "1")));
-  const limit  = Math.min(100, parseInt(String(req.query["limit"]  ?? "50")));
+  const { page, limit, status, phone } = q.data;
   const offset = (page - 1) * limit;
-  const status = req.query["status"] as string | undefined;
-  const phone  = req.query["phone"]  as string | undefined;
 
   try {
     const filterValues: unknown[] = [];
@@ -153,14 +168,16 @@ router.get("/delivery-log/stats", async (_req, res) => {
 });
 
 router.post("/delivery-log/retry", async (req, res) => {
+  const b = retryBodySchema.safeParse(req.body ?? {});
+  if (!b.success) {
+    sendValidationError(res, b.error.errors.map(e => e.message).join("; "));
+    return;
+  }
+
   const pool = getPool();
   if (!pool) { sendError(res, "Database not configured", 503); return; }
 
-  const { messageId } = req.body ?? {};
-  if (!messageId) {
-    sendError(res, "messageId is required", 400);
-    return;
-  }
+  const { messageId } = b.data;
 
   try {
     const existing = await pool.query(

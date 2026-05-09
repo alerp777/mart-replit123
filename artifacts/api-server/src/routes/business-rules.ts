@@ -179,13 +179,23 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
-router.post("/validate", async (req, res) => {
-  const { metric, value, role, conditionType, threshold, operator } = req.body ?? {};
+const validateSchema = z.object({
+  metric:        z.string().min(1, "metric is required"),
+  value:         z.number({ invalid_type_error: "value must be a number" }),
+  role:          z.string().optional(),
+  conditionType: z.string().optional(),
+  threshold:     z.union([z.string(), z.number()]).optional(),
+  operator:      z.enum([">", "<", ">=", "<=", "==", "!="]).optional(),
+});
 
-  if (!metric || value === undefined) {
-    sendValidationError(res, "metric and value are required");
+router.post("/validate", async (req, res) => {
+  const p = validateSchema.safeParse(req.body ?? {});
+  if (!p.success) {
+    sendValidationError(res, p.error.errors.map(e => e.message).join("; "));
     return;
   }
+
+  const { metric, value, role, conditionType, threshold, operator } = p.data;
 
   try {
     let matched: Array<{ id: string; name: string; conditionType: string; severity: string }> = [];

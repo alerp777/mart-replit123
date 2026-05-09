@@ -1,33 +1,51 @@
 import { Router } from "express";
+import { z } from "zod";
 import { db } from "@workspace/db";
 import { abExperimentsTable, abAssignmentsTable } from "@workspace/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { sendSuccess, sendNotFound, sendValidationError } from "../lib/response.js";
 import { logger } from "../lib/logger.js";
 
 const router = Router();
 
-router.get("/", async (req, res) => {
-  try {
-    const page  = Math.max(1, parseInt(String(req.query["page"]  ?? "1")));
-    const limit = Math.min(100, parseInt(String(req.query["limit"] ?? "50")));
-    const offset = (page - 1) * limit;
-    const status = req.query["status"] as string | undefined;
+const paginationSchema = z.object({
+  page:   z.coerce.number().int().min(1).optional().default(1),
+  limit:  z.coerce.number().int().min(1).max(100).optional().default(50),
+  status: z.string().optional(),
+});
 
-    let query = db
+router.get("/", async (req, res) => {
+  const p = paginationSchema.safeParse(req.query);
+  if (!p.success) {
+    sendValidationError(res, p.error.errors.map(e => e.message).join("; "));
+    return;
+  }
+
+  try {
+    const { page, limit, status } = p.data;
+    const offset = (page - 1) * limit;
+
+    let countQuery = db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(abExperimentsTable)
+      .$dynamic();
+
+    let dataQuery = db
       .select()
       .from(abExperimentsTable)
       .orderBy(desc(abExperimentsTable.createdAt))
+      .limit(limit)
+      .offset(offset)
       .$dynamic();
 
     if (status) {
-      query = query.where(eq(abExperimentsTable.status, status));
+      countQuery = countQuery.where(eq(abExperimentsTable.status, status));
+      dataQuery  = dataQuery.where(eq(abExperimentsTable.status, status));
     }
 
-    const all = await query;
-    const total = all.length;
-    const experiments = all.slice(offset, offset + limit);
+    const [countRow, experiments] = await Promise.all([countQuery, dataQuery]);
+    const total = countRow[0]?.count ?? 0;
 
     sendSuccess(res, { experiments, total, page, limit });
   } catch (err) {
