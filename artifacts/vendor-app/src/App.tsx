@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { usePlatformConfig } from "./lib/useConfig";
 import { useLanguage } from "./lib/useLanguage";
-import { registerPush, consumePendingNotificationTap } from "./lib/push";
+import { registerPush, consumePendingNotificationTap, type PushErrorHandler } from "./lib/push";
 import { Capacitor } from "@capacitor/core";
 import { initSentry, setSentryUser } from "./lib/sentry";
 import { initAnalytics, trackEvent, identifyUser } from "./lib/analytics";
@@ -119,6 +119,9 @@ function AppRoutes() {
     }
   }, [user?.id]);
 
+  /* ── Push registration error state: shown as a dismissable banner ── */
+  const [pushError, setPushError] = useState<"permission_denied" | "registration_failed" | "network_error" | null>(null);
+
   /* ── FCM foreground notification banner ── */
   const [fcmNotif, setFcmNotif] = useState<{ title: string; body: string; orderId?: string } | null>(null);
   const fcmCleanupRef = useRef<{ remove: () => void } | null>(null);
@@ -173,8 +176,12 @@ function AppRoutes() {
         navigate("/orders");
       }
     };
+    const onPushError: PushErrorHandler = (reason) => {
+      setPushError(reason);
+    };
+
     if (Capacitor.isNativePlatform()) {
-      registerPush(onForeground, onNotificationTap).then(cleanup => {
+      registerPush(onForeground, onNotificationTap, onPushError).then(cleanup => {
         if (cleanup) fcmCleanupRef.current = cleanup;
       }).catch(() => {});
       return () => {
@@ -184,7 +191,11 @@ function AppRoutes() {
     }
     if (typeof Notification !== "undefined" && Notification.requestPermission) {
       Notification.requestPermission().then(perm => {
-        if (perm === "granted") registerPush().catch(() => {});
+        if (perm === "granted") {
+          registerPush(undefined, undefined, onPushError).catch(() => {});
+        } else if (perm === "denied") {
+          setPushError("permission_denied");
+        }
       }).catch(() => {});
     }
 
@@ -192,13 +203,30 @@ function AppRoutes() {
        and any rotation that happened while backgrounded is picked up. */
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        registerPush().catch(() => {});
+        registerPush(undefined, undefined, onPushError).catch(() => {});
       }
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
 
+    /* Listen for SW_NAVIGATE messages from the service worker notificationclick handler.
+       Normalize via URL() so both absolute URLs and path strings are handled safely. */
+    const onSwMessage = (event: MessageEvent) => {
+      if (event.data?.type === "SW_NAVIGATE" && event.data?.path) {
+        try {
+          const fullUrl = new URL(event.data.path as string, window.location.origin);
+          const base = (import.meta.env.BASE_URL || "/vendor").replace(/\/$/, "");
+          const appPath = fullUrl.pathname.replace(new RegExp(`^${base}`), "") || "/";
+          navigate(appPath);
+        } catch {
+          navigate("/");
+        }
+      }
+    };
+    navigator.serviceWorker?.addEventListener("message", onSwMessage);
+
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      navigator.serviceWorker?.removeEventListener("message", onSwMessage);
     };
   }, [user?.id]);
 
@@ -257,6 +285,20 @@ function AppRoutes() {
       {config.platform.appStatus === "limited" && (
         <div className="fixed top-0 inset-x-0 z-50 bg-orange-400 text-white text-center py-2 px-4 text-xs font-bold shadow">
           ⚠️ Limited service — some features may be temporarily unavailable
+        </div>
+      )}
+
+      {/* ── Push registration error banner ── */}
+      {pushError && (
+        <div className="fixed top-0 left-0 right-0 z-[10001] bg-amber-500 text-white text-xs font-semibold px-4 py-2.5 flex items-center gap-3 shadow-md">
+          <span className="flex-1">
+            {pushError === "permission_denied"
+              ? "🔕 Order notifications are blocked. Go to browser settings → Site Settings → Notifications → Allow."
+              : pushError === "network_error"
+              ? "📡 Could not register for notifications. Check your connection."
+              : "⚠️ Notification registration failed. Go to Settings → Test Notification to retry."}
+          </span>
+          <button onClick={() => setPushError(null)} className="flex-shrink-0 font-bold text-white/80 hover:text-white text-lg leading-none">×</button>
         </div>
       )}
 

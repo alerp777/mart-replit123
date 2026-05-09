@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
@@ -11,6 +11,7 @@ import { LANGUAGE_OPTIONS, tDual, type Language, type TranslationKey } from "@wo
 import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from "../components/ui/accordion";
+import { registerPush } from "../lib/push";
 
 const CITIES = ["Muzaffarabad","Mirpur","Rawalakot","Bagh","Kotli","Bhimber","Jhelum","Rawalpindi","Islamabad","Lahore","Karachi","Other"];
 const BANKS  = ["EasyPaisa","JazzCash","MCB","HBL","UBL","Meezan Bank","Bank Alfalah","NBP","Allied Bank","Other"];
@@ -55,6 +56,63 @@ export default function Profile() {
   const [bankAccountTitle, setBankAccountTitle] = useState(user?.bankAccountTitle || "");
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3500); };
+
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">("unsupported");
+  const [testingNotif, setTestingNotif] = useState(false);
+
+  useEffect(() => {
+    if (typeof Notification !== "undefined") {
+      setNotifPermission(Notification.permission);
+    }
+  }, []);
+
+  const handleTestNotification = useCallback(async () => {
+    setTestingNotif(true);
+    try {
+      /* Ensure push is registered before testing.
+         - permission "default": request it then register.
+         - permission "granted": always attempt re-registration so a stale or
+           missing subscription is healed before the test send — prevents a
+           false noSubscriptions response when the vendor already said "Allow". */
+      if (notifPermission === "default") {
+        const perm = await Notification.requestPermission();
+        setNotifPermission(perm);
+        if (perm !== "granted") {
+          showToast("❌ Notification permission denied. Please allow in browser settings.");
+          return;
+        }
+      }
+      if (Notification.permission === "granted") {
+        await registerPush().catch(() => {});
+      }
+      const result = await api.testNotification() as {
+        sent?: boolean;
+        socketEmitted?: boolean;
+        noSubscriptions?: boolean;
+        attempted?: number;
+        delivered?: number;
+        stalePurged?: number;
+        warning?: string;
+        error?: string;
+      };
+      if (result.noSubscriptions) {
+        showToast("⚠️ Not registered yet — allow notifications and reload the app, then try again.");
+      } else if (result.sent) {
+        const extra = result.stalePurged ? ` (${result.stalePurged} stale token(s) cleared)` : "";
+        showToast(`✅ Test notification sent! Check your notifications.${extra}`);
+      } else if (result.warning) {
+        showToast("⚠️ " + result.warning);
+      } else if (result.socketEmitted) {
+        showToast("⚠️ In-app alert sent, but push was not delivered — check VAPID configuration.");
+      } else {
+        showToast("❌ " + (result.error || "Test notification failed."));
+      }
+    } catch (e) {
+      showToast("❌ " + errMsg(e));
+    } finally {
+      setTestingNotif(false);
+    }
+  }, [notifPermission]);
 
   useEffect(() => {
     if (!user) return;
@@ -239,6 +297,45 @@ export default function Profile() {
                 <div className="bg-blue-50 rounded-xl p-3 mt-2">
                   <p className="text-xs text-blue-700 font-medium">🔐 Session secured via encrypted authentication. Logout if using a shared device.</p>
                 </div>
+              </div>
+            </div>
+
+            {/* Notification Settings & Test */}
+            <div className={CARD}>
+              <div className="px-4 py-3.5 border-b border-gray-100">
+                <p className="font-bold text-gray-800 text-sm">🔔 Order Notifications</p>
+              </div>
+              <div className="px-4 py-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500">Status</span>
+                  {notifPermission === "granted" ? (
+                    <span className="text-xs bg-green-100 text-green-700 font-bold px-2.5 py-1 rounded-full">✓ Enabled</span>
+                  ) : notifPermission === "denied" ? (
+                    <span className="text-xs bg-red-100 text-red-600 font-bold px-2.5 py-1 rounded-full">✗ Blocked</span>
+                  ) : notifPermission === "default" ? (
+                    <span className="text-xs bg-yellow-100 text-yellow-700 font-bold px-2.5 py-1 rounded-full">⚠ Not set</span>
+                  ) : (
+                    <span className="text-xs bg-gray-100 text-gray-500 font-bold px-2.5 py-1 rounded-full">Unavailable</span>
+                  )}
+                </div>
+                {notifPermission === "denied" && (
+                  <div className="bg-red-50 rounded-xl p-3">
+                    <p className="text-xs text-red-700 font-medium">Notifications are blocked. To re-enable:</p>
+                    <p className="text-xs text-red-600 mt-1">Browser → Settings → Site Settings → Notifications → Allow for this site</p>
+                  </div>
+                )}
+                {notifPermission !== "unsupported" && notifPermission !== "denied" && (
+                  <button
+                    onClick={handleTestNotification}
+                    disabled={testingNotif}
+                    className="w-full h-10 bg-orange-50 text-orange-600 font-bold rounded-xl text-sm border border-orange-200 hover:bg-orange-100 transition-colors disabled:opacity-50"
+                  >
+                    {testingNotif ? "Sending..." : "🧪 Send Test Notification"}
+                  </button>
+                )}
+                <p className="text-[11px] text-gray-400 leading-relaxed">
+                  Use the test button to confirm you'll receive order alerts. If you don't see a notification, check that your browser allows notifications for this site.
+                </p>
               </div>
             </div>
 

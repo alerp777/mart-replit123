@@ -258,7 +258,15 @@ export default function Orders({ targetOrderId }: { targetOrderId?: string } = {
     return () => window.removeEventListener("focus", handler);
   }, []);
 
-  /* Socket.io: subscribe to vendor:{userId} room for rider tracking */
+  /* Socket.io: subscribe to vendor:{userId} room for real-time order events.
+   *
+   * Room re-join on reconnect: `vendor:join` is emitted on every `connect`
+   * event (not just the first one) so reconnections after a network drop
+   * automatically restore the real-time channel without vendor action.
+   * Socket.IO re-fires `connect` after each successful reconnection, making
+   * this the single reliable hook for both initial join and post-disconnect
+   * re-join. The `reconnect` event fires at the same time and is added as an
+   * explicit belt-and-suspenders guard. */
   useEffect(() => {
     if (!user?.id) return;
     const token = api.getToken();
@@ -268,11 +276,23 @@ export default function Orders({ targetOrderId }: { targetOrderId?: string } = {
       auth: { token },
       extraHeaders: { Authorization: `Bearer ${token}` },
       transports: ["polling", "websocket"],
+      /* Reconnection settings — aggressive retries so a brief network drop
+         does not permanently lose the real-time channel. */
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
     socketRef.current = socket;
+
+    /* joinVendorRoom: called on initial connect AND every reconnect. */
+    const joinVendorRoom = () => {
+      socket.emit("join", `vendor:${user.id}`);
+    };
+
     let isFirstConnect = true;
     socket.on("connect", () => {
-      socket.emit("join", `vendor:${user.id}`);
+      joinVendorRoom();
       if (!isFirstConnect) {
         /* Catch-up: fetch any orders that arrived while disconnected. */
         qc.invalidateQueries({ queryKey: ["vendor-orders"] });
@@ -280,21 +300,35 @@ export default function Orders({ targetOrderId }: { targetOrderId?: string } = {
       }
       isFirstConnect = false;
     });
+
+    /* Belt-and-suspenders: socket.io-client `reconnect` fires after the
+       transport is fully re-established. Re-emit the join in case the
+       `connect` event was missed for any reason. */
+    socket.io.on("reconnect", () => {
+      joinVendorRoom();
+    });
+
     socket.on("rider:location", (payload: { userId: string; latitude: number; longitude: number; updatedAt: string }) => {
       setRiderPositions(prev => ({
         ...prev,
         [payload.userId]: { lat: payload.latitude, lng: payload.longitude, updatedAt: payload.updatedAt },
       }));
     });
-    socket.on("order:new", () => {
+    socket.on("order:new", (payload?: { _isTest?: boolean }) => {
       qc.invalidateQueries({ queryKey: ["vendor-orders"] });
-      playOrderSound();
-      setUnreadCount(c => c + 1);
+      if (!payload?._isTest) {
+        playOrderSound();
+        setUnreadCount(c => c + 1);
+      }
     });
     socket.on("order:update", () => {
       qc.invalidateQueries({ queryKey: ["vendor-orders"] });
     });
-    return () => { socket.disconnect(); socketRef.current = null; };
+    return () => {
+      socket.io.off("reconnect");
+      socket.disconnect();
+      socketRef.current = null;
+    };
   }, [user?.id]);
 
   const apiStatus = tab === "new" ? "pending" : tab;

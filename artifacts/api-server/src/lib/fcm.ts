@@ -71,13 +71,14 @@ export async function sendFcmToToken(token: string, payload: FcmPayload): Promis
 export async function sendFcmToTokens(
   tokens: string[],
   payload: FcmPayload,
-): Promise<{ stale: string[] }> {
-  if (tokens.length === 0) return { stale: [] };
+): Promise<{ stale: string[]; delivered: number }> {
+  if (tokens.length === 0) return { stale: [], delivered: 0 };
   const admin = await getFirebaseAdmin();
-  if (!admin) return { stale: [] };
+  if (!admin) return { stale: [], delivered: 0 };
 
   const dataEntries = buildDataEntries(payload);
   const stale: string[] = [];
+  let delivered = 0;
 
   /* Process in chunks of FCM_CHUNK_SIZE (≤500 per Firebase restriction). */
   for (let i = 0; i < tokens.length; i += FCM_CHUNK_SIZE) {
@@ -100,7 +101,9 @@ export async function sendFcmToTokens(
       });
 
       response.responses.forEach((r, idx) => {
-        if (!r.success) {
+        if (r.success) {
+          delivered++;
+        } else {
           const code = r.error?.code ?? "";
           if (isStaleTokenError(code)) {
             stale.push(chunk[idx]!);
@@ -114,7 +117,7 @@ export async function sendFcmToTokens(
     }
   }
 
-  return { stale };
+  return { stale, delivered };
 }
 
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */

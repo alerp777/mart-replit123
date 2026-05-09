@@ -12,7 +12,7 @@ import { t } from "@workspace/i18n";
 import { getUserLanguage } from "../lib/getUserLanguage.js";
 import { getIO, emitRiderNewRequest } from "../lib/socketio.js";
 import { sendSuccess, sendCreated, sendError, sendNotFound, sendForbidden, sendValidationError } from "../lib/response.js";
-import { sendPushToUsers } from "../lib/webpush.js";
+import { sendPushToUsers, sendPushToUser } from "../lib/webpush.js";
 
 const router: IRouter = Router();
 
@@ -1640,6 +1640,52 @@ router.put("/schedule", validateBody(putScheduleSchema), async (req, res) => {
       : { id: null, vendorId, dayOfWeek: i, dayName: name, openTime: "09:00", closeTime: "21:00", isEnabled: false };
   });
   sendSuccess(res, { schedule: result });
+});
+
+/* ═══════════════════  Test Notification  ═══════════════════ */
+
+router.post("/test-notification", async (req, res) => {
+  const vendorId = req.vendorUser!.id;
+
+  /* Emit a socket event to the vendor's room so the in-app sound fires immediately */
+  const io = getIO();
+  if (io) {
+    io.to(`vendor:${vendorId}`).emit("order:new", { _isTest: true });
+  }
+
+  /* Send a real push notification and return actual delivery stats so the
+     vendor knows whether the push path is genuinely working. */
+  try {
+    const stats = await sendPushToUser(vendorId, {
+      title: "🔔 Test Notification",
+      body: "Notifications are working! You will receive order alerts like this.",
+      tag: `vendor-test-${Date.now()}`,
+      data: { type: "test" },
+    });
+
+    if (stats.noSubscriptions) {
+      sendSuccess(res, {
+        sent: false,
+        socketEmitted: !!io,
+        noSubscriptions: true,
+        error: "No push subscriptions found. Open the vendor app and allow notifications to register.",
+      });
+      return;
+    }
+
+    sendSuccess(res, {
+      sent: stats.delivered > 0,
+      socketEmitted: !!io,
+      noSubscriptions: false,
+      attempted: stats.attempted,
+      delivered: stats.delivered,
+      stalePurged: stats.stalePurged,
+      ...(stats.stalePurged > 0 ? { warning: `${stats.stalePurged} stale token(s) purged — re-open the vendor app to re-register.` } : {}),
+    });
+  } catch (err) {
+    logger.warn({ vendorId, err: err instanceof Error ? err.message : String(err) }, "[vendor] test notification push failed");
+    sendSuccess(res, { sent: false, socketEmitted: !!io, noSubscriptions: false, error: "Push send failed — check VAPID/FCM configuration" });
+  }
 });
 
 export default router;

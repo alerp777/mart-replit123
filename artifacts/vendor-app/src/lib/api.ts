@@ -399,4 +399,7 @@ export const api = {
   /* Settings */
   getSettings:    () => apiFetch("/settings"),
   updateSettings: (data: Record<string, unknown>) => apiFetch("/settings", { method: "PUT", body: JSON.stringify(data) }),
+
+  /* Test notification */
+  testNotification: () => apiFetch("/vendor/test-notification", { method: "POST", body: "{}" }),
 };

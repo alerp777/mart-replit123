@@ -103,7 +103,9 @@ function broadcastNewOrder(order: ReturnType<typeof mapOrder>, vendorId?: string
 
   /* FCM / VAPID push — decoupled from socket availability so vendor push
      remains reliable even if the socket layer hasn't started yet.
-     data.orderId lets the vendor app deep-link to /orders on tap. */
+     data.orderId lets the vendor app deep-link to /orders on tap.
+     Stats are awaited asynchronously (fire-and-forget from the caller's
+     perspective) so stale tokens are explicitly purged and logged on failure. */
   if (vendorId) {
     const itemCount = Array.isArray(order.items) ? order.items.length : 0;
     sendPushToUser(vendorId, {
@@ -111,8 +113,22 @@ function broadcastNewOrder(order: ReturnType<typeof mapOrder>, vendorId?: string
       body: `New order · Rs. ${Number(order.total).toFixed(0)} · ${itemCount} item${itemCount !== 1 ? "s" : ""}`,
       tag: `new-order-${order.id}`,
       data: { orderId: order.id },
+    }).then((stats) => {
+      if (stats.noSubscriptions) {
+        logger.info({ orderId: order.id, vendorId }, "[broadcast] vendor has no push subscriptions — push skipped");
+      } else if (stats.stalePurged > 0) {
+        logger.warn(
+          { orderId: order.id, vendorId, attempted: stats.attempted, delivered: stats.delivered, stalePurged: stats.stalePurged },
+          "[broadcast] stale vendor push tokens purged after new-order broadcast",
+        );
+      } else {
+        logger.debug(
+          { orderId: order.id, vendorId, attempted: stats.attempted, delivered: stats.delivered },
+          "[broadcast] vendor push notification sent",
+        );
+      }
     }).catch((err: Error) =>
-      logger.warn({ orderId: order.id, vendorId, err: err.message }, "[broadcast] vendor push notification failed"),
+      logger.warn({ orderId: order.id, vendorId, err: err.message }, "[broadcast] vendor push notification failed — DB error fetching subscriptions"),
     );
   }
 }

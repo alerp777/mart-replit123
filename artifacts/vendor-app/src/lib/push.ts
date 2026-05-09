@@ -18,6 +18,7 @@
 
 import { Capacitor } from "@capacitor/core";
 import { vendorEnv, vendorIsDev } from "./envValidation";
+import { api } from "./api";
 
 /* API origin for native Capacitor builds; empty string falls through to
    relative paths in web-proxy mode. Sourced from the validated env singleton. */
@@ -59,25 +60,33 @@ if (Capacitor.isNativePlatform()) {
   }).catch(() => {});
 }
 
+/** Called when push registration fails so the UI can show a re-enable prompt. */
+export type PushErrorHandler = (reason: "permission_denied" | "registration_failed" | "network_error") => void;
+
 export async function registerPush(
   onForegroundMessage?: (title: string, body: string, data?: Record<string, string>) => void,
   onNotificationTap?: NotificationTapHandler,
+  onError?: PushErrorHandler,
 ): Promise<PushCleanup | void> {
   if (Capacitor.isNativePlatform()) {
-    return registerFcmPush(onForegroundMessage, onNotificationTap);
+    return registerFcmPush(onForegroundMessage, onNotificationTap, onError);
   }
-  return registerVapidPush();
+  return registerVapidPush(onError);
 }
 
 /* ─── Native FCM path ─────────────────────────────────────────────────────── */
 
 function getAuthToken(): string {
-  return localStorage.getItem("ajkmart_vendor_token") ?? "";
+  /* Use the api module's in-memory token — never localStorage, which is purged
+     on startup. Reading from localStorage would always return "" and cause all
+     push subscription requests to fail with 401. */
+  return api.getToken();
 }
 
 async function registerFcmPush(
   onForegroundMessage?: (title: string, body: string, data?: Record<string, string>) => void,
   onNotificationTap?: NotificationTapHandler,
+  onError?: PushErrorHandler,
 ): Promise<PushCleanup | void> {
   try {
     const { PushNotifications } = await import("@capacitor/push-notifications");
@@ -85,6 +94,7 @@ async function registerFcmPush(
     const permResult = await PushNotifications.requestPermissions();
     if (permResult.receive !== "granted") {
       if (vendorIsDev) console.warn("[push] FCM permission denied");
+      onError?.("permission_denied");
       return;
     }
 
@@ -104,6 +114,12 @@ async function registerFcmPush(
       });
       if (!res.ok && res.status !== 409) {
         if (vendorIsDev) console.warn("[push] FCM token registration failed:", res.status, res.statusText);
+        /* Surface failure so App.tsx can show a re-enable banner to the vendor */
+        if (res.status >= 500) {
+          onError?.("network_error");
+        } else if (res.status >= 400) {
+          onError?.("registration_failed");
+        }
       }
     };
 
@@ -171,15 +187,23 @@ async function registerFcmPush(
     return { remove: () => cleanups.forEach((h) => h.remove()) };
   } catch (e) {
     if (vendorIsDev) console.warn("[push] FCM registration failed:", e);
+    onError?.("registration_failed");
   }
 }
 
 /* ─── Browser VAPID path ──────────────────────────────────────────────────── */
 
-async function registerVapidPush(): Promise<void> {
+async function registerVapidPush(onError?: PushErrorHandler): Promise<void> {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
   try {
     const base = (vendorEnv.baseUrl || "/").replace(/\/$/, "");
+
+    /* Check if permission was denied before attempting registration */
+    if (typeof Notification !== "undefined" && Notification.permission === "denied") {
+      onError?.("permission_denied");
+      return;
+    }
+
     const reg = await navigator.serviceWorker.register(`${base}/sw.js`);
     const existing = await reg.pushManager.getSubscription();
     if (existing) {
@@ -197,18 +221,32 @@ async function registerVapidPush(): Promise<void> {
             role: "vendor",
           }),
         });
-        if (!res.ok && res.status !== 409 && vendorIsDev) {
-          console.warn("[push] VAPID re-registration failed:", res.status);
+        if (!res.ok && res.status !== 409) {
+          if (vendorIsDev) console.warn("[push] VAPID re-registration failed:", res.status);
+          if (res.status >= 400 && res.status < 500) {
+            /* 4xx: subscription is stale — unsubscribe and force fresh registration */
+            await existing.unsubscribe().catch(() => {});
+            onError?.("registration_failed");
+          } else if (res.status >= 500) {
+            /* 5xx: server error — surface to UI so vendor knows push may be degraded */
+            onError?.("network_error");
+          }
         }
       }
       return;
     }
 
     const vapidRes = await fetch(`${base}/api/push/vapid-key`);
-    if (!vapidRes.ok) return;
+    if (!vapidRes.ok) {
+      onError?.("network_error");
+      return;
+    }
     const vj = await vapidRes.json();
     const { publicKey } = (vj?.success === true && "data" in vj ? vj.data : vj) as { publicKey: string };
-    if (!publicKey) return;
+    if (!publicKey) {
+      onError?.("registration_failed");
+      return;
+    }
 
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
@@ -227,11 +265,20 @@ async function registerVapidPush(): Promise<void> {
         role: "vendor",
       }),
     });
-    if (!res.ok && res.status !== 409 && vendorIsDev) {
-      console.warn("[push] VAPID subscription registration failed:", res.status);
+    if (!res.ok && res.status !== 409) {
+      if (vendorIsDev) console.warn("[push] VAPID subscription registration failed:", res.status);
+      onError?.("registration_failed");
     }
-  } catch (e) {
+  } catch (e: unknown) {
     if (vendorIsDev) console.warn("[push] VAPID registration failed:", e);
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("permission") || msg.includes("denied") || msg.includes("NotAllowed")) {
+      onError?.("permission_denied");
+    } else if (msg.includes("fetch") || msg.includes("network") || msg.includes("Failed to fetch")) {
+      onError?.("network_error");
+    } else {
+      onError?.("registration_failed");
+    }
   }
 }
 
