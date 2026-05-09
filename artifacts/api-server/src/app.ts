@@ -233,13 +233,10 @@ export async function runStartupTasks(): Promise<void> {
  *   developers can work without setting every env var upfront.
  */
 function validateCORS(): string[] {
-  const fromEnv = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
-    : [
-        ...(process.env.FRONTEND_URL || '').split(','),
-        ...(process.env.CLIENT_URL || '').split(','),
-        ...(process.env.ADMIN_BASE_URL || '').split(','),
-      ].filter(Boolean);
+  const fromEnv = (process.env.ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map(o => o.trim())
+    .filter(Boolean);
 
   if (fromEnv.length > 0) {
     return fromEnv;
