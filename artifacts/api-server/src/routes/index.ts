@@ -81,10 +81,10 @@ router.use("/wallet", verifyTokenFamily, userApiLimiter, walletRouter);
 router.use("/rides", verifyTokenFamily, userApiLimiter, ridesRouter);
 router.use("/locations", locationsRouter);
 router.use("/categories", categoriesRouter);
-router.use("/pharmacy-orders", pharmacyRouter);
-router.use("/parcel-bookings", parcelRouter);
-router.use("/notifications", notificationsRouter);
-router.use("/addresses", addressesRouter);
+router.use("/pharmacy-orders", verifyTokenFamily, userApiLimiter, pharmacyRouter);
+router.use("/parcel-bookings", verifyTokenFamily, userApiLimiter, parcelRouter);
+router.use("/notifications", verifyTokenFamily, userApiLimiter, notificationsRouter);
+router.use("/addresses", verifyTokenFamily, userApiLimiter, addressesRouter);
 router.use("/settings", settingsRouter);
 if (process.env["NODE_ENV"] !== "production") {
   router.use("/seed", seedRouter);
@@ -103,7 +103,7 @@ router.use("/platform-config", platformConfigRouter);
 router.use("/rider", riderRouter);
 router.use("/vendor", vendorRouter);
 router.use("/payments", paymentsRouter);
-router.use("/reviews", reviewsRouter);
+router.use("/reviews", userApiLimiter, reviewsRouter);
 router.use("/maps", mapsRouter);
 /* /api/admin/maps/{test|usage|cache/clear} — dedicated admin maps router
    so admin clients using the /api/admin prefix reach the right handlers.
@@ -111,13 +111,13 @@ router.use("/maps", mapsRouter);
 router.use("/admin/maps", adminMapsRouter);
 router.use("/school", schoolRouter);
 router.use("/uploads", uploadsRouter);
-router.use("/sos", sosRouter);
-router.use("/recommendations", recommendationsRouter);
+router.use("/sos", verifyTokenFamily, userApiLimiter, sosRouter);
+router.use("/recommendations", userApiLimiter, recommendationsRouter);
 router.use("/banners", bannersRouter);
 router.use("/variants", variantsRouter);
-router.use("/push", pushRouter);
-router.use("/kyc", kycRouter);
-router.use("/wishlist", wishlistRouter);
+router.use("/push", verifyTokenFamily, userApiLimiter, pushRouter);
+router.use("/kyc", verifyTokenFamily, userApiLimiter, kycRouter);
+router.use("/wishlist", verifyTokenFamily, userApiLimiter, wishlistRouter);
 router.use("/van", vanRouter);
 router.use("/webhooks", webhooksRouter);
 router.use("/delivery/eligibility", deliveryEligibilityRouter);
@@ -169,10 +169,5 @@ router.use("/whatsapp", whatsappDeliveryRouter);
 router.use("/business-rules", businessRulesRouter);
 /* admin/school/subscriptions — paginated list + cancel */
 router.use("/admin/school", adminSchoolRouter);
-
-router.use("/experiments", experimentsRouter);
-router.use("/whatsapp", whatsappDeliveryRouter);
-router.use("/business-rules", businessRulesRouter);
-router.use("/loyalty", loyaltyFullRouter);
 
 export default router;

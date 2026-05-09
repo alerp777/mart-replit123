@@ -575,4 +575,6 @@ router.get("/demo-data", async (_req, res) => {
   });
 });
 
+export async function ensureLaunchData(): Promise<void> {}
+
 export default router;

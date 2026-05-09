@@ -56,6 +56,40 @@ async function getUploadLimits() {
   };
 }
 
+/* ── Magic-byte (file signature) validation ─────────────────────────────────
+   Prevents MIME-type spoofing by checking the actual file header bytes rather
+   than trusting the Content-Type header. */
+const MAGIC_BYTES: Record<string, ReadonlyArray<readonly number[]>> = {
+  "image/jpeg": [[0xFF, 0xD8, 0xFF]],
+  "image/jpg":  [[0xFF, 0xD8, 0xFF]],
+  "image/png":  [[0x89, 0x50, 0x4E, 0x47]],
+  "image/webp": [[0x52, 0x49, 0x46, 0x46]], /* RIFF header — WebP specific check below */
+  "video/mp4":  [[0x66, 0x74, 0x79, 0x70]], /* ftyp box at offset 4 */
+  "video/quicktime": [[0x66, 0x74, 0x79, 0x70]],
+  "video/webm": [[0x1A, 0x45, 0xDF, 0xA3]],
+};
+
+function validateFileMagicBytes(buffer: Buffer, mimeType: string): boolean {
+  const signatures = MAGIC_BYTES[mimeType];
+  if (!signatures) return true; /* Unknown type — pass through (MIME filter handles it) */
+
+  const normalizedMime = mimeType === "image/jpg" ? "image/jpeg" : mimeType;
+
+  for (const sig of signatures) {
+    const offset = (normalizedMime === "video/mp4" || normalizedMime === "video/quicktime") ? 4 : 0;
+    if (buffer.length < offset + sig.length) continue;
+    if (sig.every((byte, i) => buffer[offset + i] === byte)) {
+      if (normalizedMime === "image/webp") {
+        /* WebP must also have 'WEBP' at bytes 8-11 */
+        if (buffer.length < 12) return false;
+        return buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 const prescriptionRefMap = new Map<string, string>();
 
 async function ensureDir() {
@@ -139,6 +173,11 @@ router.post("/", customerAuth, async (req, res) => {
       return;
     }
 
+    if (!validateFileMagicBytes(buffer, mime)) {
+      sendValidationError(res, "File content does not match the declared MIME type");
+      return;
+    }
+
     const url = await saveBuffer(buffer, "upload", mime);
 
     sendCreated(res, {
@@ -193,6 +232,11 @@ router.post(
       }
       if (buffer.length > limits.maxImageSize) {
         sendValidationError(res, `File too large. Maximum ${Math.round(limits.maxImageSize / (1024*1024))}MB allowed`);
+        return;
+      }
+
+      if (!validateFileMagicBytes(buffer, mimetype)) {
+        sendValidationError(res, "File content does not match the declared MIME type");
         return;
       }
 
@@ -252,6 +296,11 @@ router.post(
         return;
       }
 
+      if (!validateFileMagicBytes(buffer, mimetype)) {
+        sendValidationError(res, "File content does not match the declared MIME type");
+        return;
+      }
+
       const url = await saveBuffer(buffer, "reg", mimetype);
 
       sendCreated(res, {
@@ -293,6 +342,11 @@ router.post("/prescription", customerAuth, async (req, res) => {
 
     if (buffer.length > limits.maxImageSize) {
       sendValidationError(res, `File too large. Maximum ${Math.round(limits.maxImageSize / 1024 / 1024)}MB allowed`);
+      return;
+    }
+
+    if (!validateFileMagicBytes(buffer, mime)) {
+      sendValidationError(res, "File content does not match the declared MIME type");
       return;
     }
 

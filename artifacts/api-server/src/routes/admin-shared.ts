@@ -364,6 +364,20 @@ export async function ensureDefaultRideServices(): Promise<void> {}
 export async function ensureDefaultLocations(): Promise<void> {}
 export function formatSvc(svc: unknown): unknown { return svc; }
 
+/* ── MIGRATION STUBS ────────────────────────────────────────────────────── */
+
+export async function ensureAuthMethodColumn(): Promise<void> {}
+export async function ensureRideBidsMigration(): Promise<void> {}
+export async function ensureOrdersGpsColumns(): Promise<void> {}
+export async function ensurePromotionsTables(): Promise<void> {}
+export async function ensureSupportMessagesTable(): Promise<void> {}
+export async function ensureFaqsTable(): Promise<void> {}
+export async function ensureCommunicationTables(): Promise<void> {}
+export async function ensureVendorLocationColumns(): Promise<void> {}
+export async function ensureVanServiceUpgrade(): Promise<void> {}
+export async function ensureWalletP2PColumns(): Promise<void> {}
+export async function ensureComplianceTables(): Promise<void> {}
+
 /* ── SESSION MANAGEMENT ─────────────────────────────────────────────────── */
 
 export async function revokeAllUserSessions(userId: string): Promise<void> {

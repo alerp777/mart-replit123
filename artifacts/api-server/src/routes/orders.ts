@@ -445,3 +445,5 @@ async function validatePromoCode(
   discount = Math.min(discount, orderTotal);
   return { valid: true, discount, discountType, promoId: promo.id, maxDiscount: promo.maxDiscount ? parseFloat(String(promo.maxDiscount)) : null };
 }
+
+export default router;

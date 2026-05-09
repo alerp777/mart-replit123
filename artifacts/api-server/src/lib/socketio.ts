@@ -627,10 +627,17 @@ export function emitCustomerLocation(payload: {
   latitude: number;
   longitude: number;
   updatedAt: string;
+  rideId?: string | null;
+  parcelBookingId?: string | null;
 }) {
   if (!_io) return;
   _io.to(`user:${payload.userId}`).emit("customer:location", payload);
-  /* TODO: emit to specific ride/parcel rooms if active */
+  if (payload.rideId) {
+    _io.to(`ride:${payload.rideId}`).emit("customer:location", payload);
+  }
+  if (payload.parcelBookingId) {
+    _io.to(`parcel:${payload.parcelBookingId}`).emit("customer:location", payload);
+  }
 }
 
 /** Emit specific vendor-only update when a rider moves for their order */
@@ -649,4 +656,105 @@ export function emitRiderNewRequest(riderId: string, payload: { type: 'ride' | '
 export function emitChatMessage(conversationId: string, message: any) {
   if (!_io) return;
   _io.to(`conversation:${conversationId}`).emit("comm:message", message);
+}
+
+/** Emit ride dispatch update to the relevant ride room and admin-fleet dashboard */
+export function emitRideDispatchUpdate(payload: { rideId: string; action: string; status: string; [key: string]: any }) {
+  if (!_io) return;
+  _io.to(`ride:${payload.rideId}`).emit("ride:dispatch_update", payload);
+  _io.to("admin-fleet").emit("ride:dispatch_update", payload);
+}
+
+/** Emit rider online/offline status to admin-fleet */
+export function emitRiderStatus(payload: { userId: string; isOnline: boolean; name?: string; updatedAt: string }) {
+  if (!_io) return;
+  _io.to("admin-fleet").emit("rider:status", payload);
+}
+
+/** Emit trip OTP to the customer and the ride room */
+export function emitRideOtp(userId: string, rideId: string, otp: string) {
+  if (!_io) return;
+  _io.to(`user:${userId}`).emit("ride:otp", { rideId, otp });
+  _io.to(`ride:${rideId}`).emit("ride:otp", { rideId, otp });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SOS ALERTS
+   ══════════════════════════════════════════════════════════════ */
+export interface SosAlertPayload {
+  id: string;
+  userId: string;
+  title: string;
+  body: string;
+  link?: string | null;
+  sosStatus: string;
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
+  acknowledgedByName: string | null;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  resolvedByName: string | null;
+  resolutionNotes: string | null;
+  createdAt: string;
+  [key: string]: unknown;
+}
+
+/** Emit a new SOS alert to all admin-fleet sessions */
+export function emitSosNew(payload: SosAlertPayload) {
+  if (!_io) return;
+  _io.to("admin-fleet").emit("sos:new", payload);
+}
+
+/** Emit SOS acknowledged event */
+export function emitSosAcknowledged(payload: SosAlertPayload) {
+  if (!_io) return;
+  _io.to("admin-fleet").emit("sos:acknowledged", payload);
+  _io.to(`user:${payload.userId}`).emit("sos:acknowledged", payload);
+}
+
+/** Emit SOS resolved event */
+export function emitSosResolved(payload: SosAlertPayload) {
+  if (!_io) return;
+  _io.to("admin-fleet").emit("sos:resolved", payload);
+  _io.to(`user:${payload.userId}`).emit("sos:resolved", payload);
+}
+
+/** Legacy rider SOS relay — kept for fleet map backward compat */
+export function emitRiderSOS(payload: {
+  userId: string;
+  name: string;
+  phone: string | null;
+  latitude: number | null;
+  longitude: number | null;
+}) {
+  if (!_io) return;
+  _io.to("admin-fleet").emit("rider:sos", payload);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   VAN / INTERCITY TRANSPORT
+   ══════════════════════════════════════════════════════════════ */
+
+/** Emit real-time van GPS location to passengers and admin */
+export function emitVanLocation(
+  scheduleId: string,
+  date: string,
+  payload: { latitude: number; longitude: number; speed?: number; heading?: number; updatedAt: string },
+) {
+  if (!_io) return;
+  const room = `van:${scheduleId}:${date}`;
+  _io.to(room).emit("van:location", { scheduleId, date, ...payload });
+  _io.to("admin-fleet").emit("van:location", { scheduleId, date, ...payload });
+}
+
+/** Emit van trip lifecycle events (trip_started, trip_completed, passenger_boarded, etc.) */
+export function emitVanTripUpdate(
+  scheduleId: string,
+  date: string,
+  payload: { event: string; data?: unknown },
+) {
+  if (!_io) return;
+  const room = `van:${scheduleId}:${date}`;
+  _io.to(room).emit("van:trip_update", { scheduleId, date, ...payload });
+  _io.to("admin-fleet").emit("van:trip_update", { scheduleId, date, ...payload });
 }

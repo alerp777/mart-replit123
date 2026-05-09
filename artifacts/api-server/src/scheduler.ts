@@ -39,6 +39,9 @@ function register(
   fn: () => Promise<void>,
   intervalMs: number,
 ): ReturnType<typeof setInterval> {
+  fn().catch((e: unknown) => {
+    logger.warn({ err: (e as Error).message, job: label }, "[scheduler] immediate first-run failed");
+  });
   const handle = setInterval(async () => {
     try {
       await fn();

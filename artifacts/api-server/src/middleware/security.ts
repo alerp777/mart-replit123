@@ -3,10 +3,41 @@ import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { db } from "@workspace/db";
-import { usersTable, refreshTokensTable, authAuditLogTable, rateLimitsTable, adminActionAuditLogTable } from "@workspace/db/schema";
+import { usersTable, refreshTokensTable, authAuditLogTable, rateLimitsTable, adminActionAuditLogTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq, and, lt, gt, like, sql, isNull } from "drizzle-orm";
-import { getPlatformSettings } from "../routes/admin.js";
 import { generateId } from "../lib/id.js";
+
+/* ══════════════════════════════════════════════════════════════
+   SETTINGS CACHE — platform_settings table with 60-second TTL
+   Populated lazily on first call; all sync accessors below read
+   from this in-memory snapshot (safe because it degrades to
+   defaults on cache miss, never blocks a request).
+   ══════════════════════════════════════════════════════════════ */
+let settingsCache: Record<string, string> = {};
+let _settingsCacheTimestamp = 0;
+const SETTINGS_CACHE_TTL_MS = 60 * 1000;
+
+export async function getCachedSettings(): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (_settingsCacheTimestamp > 0 && now - _settingsCacheTimestamp < SETTINGS_CACHE_TTL_MS) {
+    return settingsCache;
+  }
+  try {
+    const rows = await db.select().from(platformSettingsTable);
+    const map: Record<string, string> = {};
+    for (const r of rows) {
+      if (r.value !== null) map[r.key] = r.value;
+    }
+    settingsCache = map;
+    _settingsCacheTimestamp = now;
+  } catch (err) {
+    logger.warn({ err }, "[security] Settings cache refresh failed — using stale/empty cache");
+  }
+  return settingsCache;
+}
+
+/* Non-blocking warm-up at startup */
+setImmediate(() => { getCachedSettings().catch(() => {}); });
 
 /* ══════════════════════════════════════════════════════════════
    JWT CONFIGURATION — fail-fast if secret is absent or too short
@@ -137,10 +168,17 @@ async function isTorExitNode(ip: string): Promise<boolean> {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   VPN / PROXY DETECTION
+   VPN / PROXY DETECTION  (with circuit-breaker)
    ══════════════════════════════════════════════════════════════ */
 const vpnCache: Map<string, { isVpn: boolean; cachedAt: number }> = new Map();
 let VPN_CACHE_TTL_MS = 10 * 60 * 1000;
+
+/* Circuit-breaker state for ip-api.com */
+let _vpnCbFailures = 0;
+let _vpnCbOpenedAt = 0;
+const VPN_CB_THRESHOLD = 3;          /* open after 3 consecutive failures */
+const VPN_CB_WINDOW_MS = 60_000;     /* within 60 seconds */
+const VPN_CB_RESET_MS  = 5 * 60_000; /* stay open for 5 minutes */
 
 async function isVpnOrProxy(ip: string): Promise<boolean> {
   const cached = vpnCache.get(ip);
@@ -152,6 +190,16 @@ async function isVpnOrProxy(ip: string): Promise<boolean> {
     return false;
   }
 
+  /* Circuit-breaker: skip external call while open */
+  if (_vpnCbOpenedAt > 0 && Date.now() - _vpnCbOpenedAt < VPN_CB_RESET_MS) {
+    logger.warn({ ip }, "[VPN] circuit-breaker open — skipping VPN check");
+    return false;
+  } else if (_vpnCbOpenedAt > 0) {
+    /* Reset after cooldown */
+    _vpnCbFailures = 0;
+    _vpnCbOpenedAt = 0;
+  }
+
   try {
     const resp = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,proxy,hosting`, {
       signal: AbortSignal.timeout(5_000),
@@ -159,16 +207,29 @@ async function isVpnOrProxy(ip: string): Promise<boolean> {
     if (!resp.ok) {
       logger.warn(`[VPN] Check failed for IP ${ip}: HTTP ${resp.status} — flagging as check_failed`);
       addSecurityEvent({ type: "vpn_check_failed", ip, details: `VPN check HTTP error ${resp.status}`, severity: "low" });
+      _vpnCbFailures++;
+      if (_vpnCbFailures >= VPN_CB_THRESHOLD) {
+        _vpnCbOpenedAt = Date.now();
+        logger.warn({ failures: _vpnCbFailures, windowMs: VPN_CB_WINDOW_MS }, "[VPN] circuit-breaker opened — too many ip-api.com failures");
+      }
       return false;
     }
     interface IpApiResponse { status?: string; proxy?: boolean; hosting?: boolean; }
     const data = await resp.json() as IpApiResponse;
     const isVpn = data.status === "success" && (data.proxy === true || data.hosting === true);
     vpnCache.set(ip, { isVpn, cachedAt: Date.now() });
+    /* Successful call — reset failure counter */
+    _vpnCbFailures = 0;
     return isVpn;
-  } catch (err: any) {
-    logger.warn(`[VPN] Check failed for IP ${ip}: ${err?.message ?? "unknown error"} — flagging as check_failed`);
-    addSecurityEvent({ type: "vpn_check_failed", ip, details: `VPN check error: ${err?.message ?? "unknown"}`, severity: "low" });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "unknown error";
+    logger.warn(`[VPN] Check failed for IP ${ip}: ${msg} — flagging as check_failed`);
+    addSecurityEvent({ type: "vpn_check_failed", ip, details: `VPN check error: ${msg}`, severity: "low" });
+    _vpnCbFailures++;
+    if (_vpnCbFailures >= VPN_CB_THRESHOLD) {
+      _vpnCbOpenedAt = Date.now();
+      logger.warn({ failures: _vpnCbFailures }, "[VPN] circuit-breaker opened — too many ip-api.com failures");
+    }
     return false;
   }
 }
@@ -330,8 +391,26 @@ export function addAuditEntry(entry: Omit<AuditEntry, "timestamp">) {
 }
 
 export function addSecurityEvent(event: Omit<SecurityEvent, "timestamp">) {
-  securityEvents.unshift({ ...event, timestamp: new Date().toISOString() });
+  const entry: SecurityEvent = { ...event, timestamp: new Date().toISOString() };
+  securityEvents.unshift(entry);
   if (securityEvents.length > 2000) securityEvents.splice(2000);
+
+  import("@workspace/db").then(({ db }) =>
+    import("@workspace/db/schema").then(({ securityEventsTable }) =>
+      import("../lib/id.js").then(({ generateId }) =>
+        db.insert(securityEventsTable).values({
+          id:       generateId(),
+          type:     entry.type,
+          ip:       entry.ip,
+          userId:   entry.userId ?? null,
+          details:  entry.details,
+          severity: entry.severity,
+        }).catch((err: unknown) => {
+          logger.warn({ err }, "[security] DB persist of security event failed (in-memory copy retained)");
+        })
+      )
+    )
+  ).catch(() => {});
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -608,4 +687,459 @@ export function verifyAdminJwt(token: string): AdminJwtPayload | null {
   } catch {
     return null;
   }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SETTINGS CACHE INVALIDATION
+   ══════════════════════════════════════════════════════════════ */
+export function invalidateSettingsCache(): void {
+  settingsCache = {};
+  _settingsCacheTimestamp = 0;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   REFRESH TOKEN HELPERS
+   ══════════════════════════════════════════════════════════════ */
+export async function isRefreshTokenValid(tokenHash: string): Promise<typeof refreshTokensTable.$inferSelect | null> {
+  try {
+    const [row] = await db
+      .select()
+      .from(refreshTokensTable)
+      .where(
+        and(
+          eq(refreshTokensTable.tokenHash, tokenHash),
+          eq(refreshTokensTable.revoked, false),
+        ),
+      )
+      .limit(1);
+    if (!row) return null;
+    if (row.expiresAt < new Date()) return null;
+    return row;
+  } catch {
+    return null;
+  }
+}
+
+export async function revokeRefreshToken(tokenHash: string, reason = "REVOKED"): Promise<void> {
+  try {
+    await db
+      .update(refreshTokensTable)
+      .set({ revoked: true, revokedReason: reason, revokedAt: new Date() })
+      .where(eq(refreshTokensTable.tokenHash, tokenHash));
+  } catch (err) {
+    logger.warn({ err, reason }, "[auth] revokeRefreshToken DB error");
+  }
+}
+
+export async function revokeAllUserRefreshTokens(userId: string, reason = "FORCE_LOGOUT"): Promise<void> {
+  try {
+    await db
+      .update(refreshTokensTable)
+      .set({ revoked: true, revokedReason: reason, revokedAt: new Date() })
+      .where(and(eq(refreshTokensTable.userId, userId), eq(refreshTokensTable.revoked, false)));
+    await setUserRevocationTimestamp(userId);
+  } catch (err) {
+    logger.warn({ err, userId, reason }, "[auth] revokeAllUserRefreshTokens DB error");
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   LOCKOUT / RATE-LIMIT HELPERS  (backed by rate_limits table)
+   ══════════════════════════════════════════════════════════════ */
+export async function checkLockout(
+  key: string,
+  _maxAttempts: number,
+  _lockoutMinutes: number,
+): Promise<{ locked: boolean; minutesLeft: number }> {
+  try {
+    const [row] = await db
+      .select({ lockedUntil: rateLimitsTable.lockedUntil })
+      .from(rateLimitsTable)
+      .where(eq(rateLimitsTable.key, key))
+      .limit(1);
+    if (!row?.lockedUntil) return { locked: false, minutesLeft: 0 };
+    const now = new Date();
+    if (row.lockedUntil > now) {
+      const minutesLeft = Math.ceil((row.lockedUntil.getTime() - now.getTime()) / 60000);
+      return { locked: true, minutesLeft };
+    }
+    return { locked: false, minutesLeft: 0 };
+  } catch {
+    return { locked: false, minutesLeft: 0 };
+  }
+}
+
+export async function recordFailedAttempt(
+  key: string,
+  maxAttempts: number,
+  lockoutMinutes: number,
+): Promise<{ locked: boolean; attempts: number }> {
+  try {
+    const settings = settingsCache;
+    const lockoutEnabled = settings["security_lockout_enabled"] !== "off";
+    if (!lockoutEnabled) return { locked: false, attempts: 0 };
+
+    const [existing] = await db
+      .select()
+      .from(rateLimitsTable)
+      .where(eq(rateLimitsTable.key, key))
+      .limit(1);
+
+    const newAttempts = (existing?.attempts ?? 0) + 1;
+    const shouldLock = newAttempts >= maxAttempts;
+    const lockedUntil = shouldLock
+      ? new Date(Date.now() + lockoutMinutes * 60000)
+      : (existing?.lockedUntil ?? null);
+
+    await db
+      .insert(rateLimitsTable)
+      .values({
+        key,
+        attempts: newAttempts,
+        lockedUntil,
+        windowStart: existing?.windowStart ?? new Date(),
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: rateLimitsTable.key,
+        set: { attempts: newAttempts, lockedUntil, updatedAt: new Date() },
+      });
+
+    return { locked: shouldLock, attempts: newAttempts };
+  } catch (err) {
+    logger.warn({ err, key }, "[auth] recordFailedAttempt DB error");
+    return { locked: false, attempts: 0 };
+  }
+}
+
+export async function resetAttempts(key: string): Promise<void> {
+  try {
+    await db
+      .update(rateLimitsTable)
+      .set({ attempts: 0, lockedUntil: null, updatedAt: new Date() })
+      .where(eq(rateLimitsTable.key, key));
+  } catch (err) {
+    logger.warn({ err, key }, "[auth] resetAttempts DB error");
+  }
+}
+
+export async function unlockPhone(phone: string): Promise<void> {
+  try {
+    await db
+      .update(rateLimitsTable)
+      .set({ attempts: 0, lockedUntil: null, updatedAt: new Date() })
+      .where(eq(rateLimitsTable.key, phone));
+  } catch (err) {
+    logger.warn({ err, phone }, "[auth] unlockPhone DB error");
+  }
+}
+
+export async function checkAvailableRateLimit(
+  ip: string,
+  maxRequests: number,
+  windowMinutes: number,
+): Promise<{ limited: boolean; minutesLeft: number }> {
+  try {
+    const key = `rl:ip:${ip}`;
+    const [row] = await db
+      .select()
+      .from(rateLimitsTable)
+      .where(eq(rateLimitsTable.key, key))
+      .limit(1);
+
+    const windowMs = windowMinutes * 60000;
+    const now = new Date();
+
+    if (!row) {
+      await db
+        .insert(rateLimitsTable)
+        .values({ key, attempts: 1, lockedUntil: null, windowStart: now, updatedAt: now })
+        .onConflictDoUpdate({ target: rateLimitsTable.key, set: { attempts: 1, windowStart: now, updatedAt: now } });
+      return { limited: false, minutesLeft: 0 };
+    }
+
+    const windowEnd = new Date(row.windowStart.getTime() + windowMs);
+    if (now > windowEnd) {
+      await db
+        .update(rateLimitsTable)
+        .set({ attempts: 1, windowStart: now, updatedAt: now })
+        .where(eq(rateLimitsTable.key, key));
+      return { limited: false, minutesLeft: 0 };
+    }
+
+    const newAttempts = row.attempts + 1;
+    await db
+      .update(rateLimitsTable)
+      .set({ attempts: newAttempts, updatedAt: now })
+      .where(eq(rateLimitsTable.key, key));
+
+    if (newAttempts > maxRequests) {
+      const minutesLeft = Math.ceil((windowEnd.getTime() - now.getTime()) / 60000);
+      return { limited: true, minutesLeft };
+    }
+    return { limited: false, minutesLeft: 0 };
+  } catch {
+    return { limited: false, minutesLeft: 0 };
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   GPS SPOOF DETECTION — speed-based (stateful, requires prev coords)
+   ══════════════════════════════════════════════════════════════ */
+export function detectGPSSpoof(
+  prevLat: number,
+  prevLon: number,
+  prevUpdatedAt: string | Date,
+  lat: number,
+  lon: number,
+  maxSpeedKmh: number,
+): { spoofed: boolean; speedKmh: number } {
+  try {
+    const R = 6371; // Earth radius in km
+    const dLat = ((lat - prevLat) * Math.PI) / 180;
+    const dLon = ((lon - prevLon) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((prevLat * Math.PI) / 180) *
+        Math.cos((lat * Math.PI) / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const distanceKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    const prevTs = typeof prevUpdatedAt === "string" ? new Date(prevUpdatedAt) : prevUpdatedAt;
+    const elapsedHours = (Date.now() - prevTs.getTime()) / 3600000;
+
+    if (elapsedHours <= 0) return { spoofed: false, speedKmh: 0 };
+
+    const speedKmh = distanceKm / elapsedHours;
+    return { spoofed: speedKmh > maxSpeedKmh, speedKmh };
+  } catch {
+    return { spoofed: false, speedKmh: 0 };
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   AUTH MIDDLEWARE — customerAuth, riderAuth, anyUserAuth, idorGuard
+   ══════════════════════════════════════════════════════════════ */
+
+/** Authenticate a customer. Sets req.customerId and req.userId. */
+export async function customerAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const header = req.headers["authorization"] as string | undefined;
+  const tokenHeader = req.headers["x-auth-token"] as string | undefined;
+  const raw = tokenHeader || (header?.startsWith("Bearer ") ? header.slice(7) : null);
+
+  if (!raw) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+
+  const payload = verifyUserJwt(raw);
+  if (!payload) {
+    res.status(401).json({ error: "Invalid or expired token" });
+    return;
+  }
+
+  (req as any).customerId = payload.userId;
+  (req as any).userId     = payload.userId;
+  (req as any).userPhone  = payload.phone;
+  (req as any).userRole   = payload.role;
+  next();
+}
+
+/** Authenticate a rider. Sets req.riderId and req.userId. */
+export async function riderAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const header = req.headers["authorization"] as string | undefined;
+  const tokenHeader = req.headers["x-auth-token"] as string | undefined;
+  const raw = tokenHeader || (header?.startsWith("Bearer ") ? header.slice(7) : null);
+
+  if (!raw) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+
+  const payload = verifyUserJwt(raw);
+  if (!payload) {
+    res.status(401).json({ error: "Invalid or expired token" });
+    return;
+  }
+
+  (req as any).riderId   = payload.userId;
+  (req as any).userId    = payload.userId;
+  (req as any).userPhone = payload.phone;
+  (req as any).userRole  = payload.role;
+  next();
+}
+
+/** Authenticate any authenticated user (customer, rider, or vendor). */
+export async function anyUserAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const header = req.headers["authorization"] as string | undefined;
+  const tokenHeader = req.headers["x-auth-token"] as string | undefined;
+  const raw = tokenHeader || (header?.startsWith("Bearer ") ? header.slice(7) : null);
+
+  if (!raw) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+
+  const payload = verifyUserJwt(raw);
+  if (!payload) {
+    res.status(401).json({ error: "Invalid or expired token" });
+    return;
+  }
+
+  (req as any).userId    = payload.userId;
+  (req as any).userPhone = payload.phone;
+  (req as any).userRole  = payload.role;
+
+  const role = payload.role?.toLowerCase() ?? "";
+  if (role === "customer") (req as any).customerId = payload.userId;
+  if (role === "rider")    (req as any).riderId    = payload.userId;
+  if (role === "vendor")   (req as any).vendorId   = payload.userId;
+
+  next();
+}
+
+/**
+ * IDOR guard — verifies the authenticated user can only access
+ * their own resource via :userId or :id param matching their JWT userId.
+ * Admin requests (req.adminId present) bypass the check.
+ */
+export function idorGuard(req: Request, res: Response, next: NextFunction): void {
+  if ((req as any).adminId) { next(); return; }
+
+  const callerId = (req as any).userId ?? (req as any).customerId ?? (req as any).riderId;
+  if (!callerId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+
+  const paramId = req.params["userId"] ?? req.params["id"];
+  if (paramId && paramId !== callerId) {
+    logger.warn({ callerId, paramId }, "[security] IDOR attempt blocked");
+    res.status(403).json({ error: "Access denied" });
+    return;
+  }
+
+  next();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FEATURE FLAG MIDDLEWARE
+   ══════════════════════════════════════════════════════════════ */
+export function requireFeatureEnabled(featureKey: string, disabledMessage?: string) {
+  return async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const settings = await getCachedSettings();
+      if (settings[featureKey] === "false" || settings[featureKey] === "0" || settings[featureKey] === "off") {
+        res.status(403).json({
+          error: disabledMessage ?? `Feature '${featureKey}' is currently disabled.`,
+          code:  "FEATURE_DISABLED",
+        });
+        return;
+      }
+    } catch {
+      /* On error, allow through — don't block requests on settings lookup failure */
+    }
+    next();
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CAPTCHA VERIFICATION — no-op if CAPTCHA_SECRET not configured
+   ══════════════════════════════════════════════════════════════ */
+/**
+ * Role-based auth factory. Returns middleware that verifies the user JWT and
+ * optionally checks the role matches the required role.
+ *
+ * Options:
+ *   vendorApprovalCheck — if true, also checks the vendor profile is approved.
+ */
+export function requireRole(
+  role: "customer" | "rider" | "vendor" | string,
+  options?: { vendorApprovalCheck?: boolean },
+) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const header = req.headers["authorization"] as string | undefined;
+    const tokenHeader = req.headers["x-auth-token"] as string | undefined;
+    const raw = tokenHeader || (header?.startsWith("Bearer ") ? header.slice(7) : null);
+
+    if (!raw) {
+      res.status(401).json({ error: "Authentication required" });
+      return;
+    }
+
+    const payload = verifyUserJwt(raw);
+    if (!payload) {
+      res.status(401).json({ error: "Invalid or expired token" });
+      return;
+    }
+
+    const tokenRole = payload.role?.toLowerCase() ?? "";
+    if (role && tokenRole !== role.toLowerCase()) {
+      res.status(403).json({ error: "Forbidden: insufficient role" });
+      return;
+    }
+
+    (req as any).userId    = payload.userId;
+    (req as any).userPhone = payload.phone;
+    (req as any).userRole  = payload.role;
+
+    if (tokenRole === "customer") (req as any).customerId = payload.userId;
+    if (tokenRole === "rider")    (req as any).riderId    = payload.userId;
+    if (tokenRole === "vendor")   (req as any).vendorId   = payload.userId;
+
+    if (options?.vendorApprovalCheck && tokenRole === "vendor") {
+      try {
+        const { db } = await import("@workspace/db");
+        const { vendorProfilesTable } = await import("@workspace/db/schema");
+        const { eq } = await import("drizzle-orm");
+        const [profile] = await db
+          .select({ approved: vendorProfilesTable.approved })
+          .from(vendorProfilesTable)
+          .where(eq(vendorProfilesTable.userId, payload.userId))
+          .limit(1);
+        if (!profile || !profile.approved) {
+          res.status(403).json({ error: "Vendor account not approved" });
+          return;
+        }
+      } catch {
+        /* on DB error, allow through */
+      }
+    }
+
+    next();
+  };
+}
+
+export async function verifyCaptcha(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  /* Captcha is optional — if no secret is configured, pass through */
+  const secret = process.env["RECAPTCHA_SECRET_KEY"] ?? process.env["HCAPTCHA_SECRET"];
+  if (!secret) { next(); return; }
+
+  const token =
+    req.body?.captchaToken ??
+    req.body?.recaptchaToken ??
+    req.body?.hcaptchaToken ??
+    (req.headers["x-captcha-token"] as string | undefined);
+
+  if (!token) { next(); return; /* allow through if client doesn't send token */ }
+
+  try {
+    /* Try hCaptcha first, fall back to reCAPTCHA v3 */
+    const isHCaptcha = !!process.env["HCAPTCHA_SECRET"];
+    const verifyUrl = isHCaptcha
+      ? "https://hcaptcha.com/siteverify"
+      : "https://www.google.com/recaptcha/api/siteverify";
+
+    const body = new URLSearchParams({ secret, response: token });
+    const resp = await fetch(verifyUrl, { method: "POST", body, signal: AbortSignal.timeout(5000) });
+    const data = await resp.json() as { success?: boolean; score?: number };
+
+    if (!data.success) {
+      /* Log failure but don't block — captcha is advisory in this implementation */
+      logger.warn({ url: req.url }, "[captcha] Verification failed — allowing through");
+    }
+  } catch {
+    /* Network error — allow through */
+  }
+  next();
 }

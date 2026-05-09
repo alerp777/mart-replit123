@@ -1,7 +1,7 @@
 import { db } from "@workspace/db";
 import { userSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
-import { getPlatformSettings } from "../routes/admin.js";
+import { getPlatformSettings } from "../routes/admin-shared.js";
 import type { Language } from "@workspace/i18n";
 
 const VALID_LANGUAGES: Language[] = ["en", "ur", "roman", "en_roman", "en_ur"];

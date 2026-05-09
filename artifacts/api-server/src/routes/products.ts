@@ -269,3 +269,5 @@ router.get("/search", async (req, res) => {
     totalPages: Math.ceil(total / perPage),
   });
 });
+
+export default router;

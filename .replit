@@ -36,13 +36,13 @@ args = "artifacts/admin: web"
 name = "Start application"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd artifacts/api-server && pnpm run dev"
-waitForPort = 5000
-
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm install --no-frozen-lockfile && cd artifacts/api-server && pnpm run dev"
+waitForPort = 5000
 
 [[workflows.workflow]]
 name = "artifacts/admin: web"

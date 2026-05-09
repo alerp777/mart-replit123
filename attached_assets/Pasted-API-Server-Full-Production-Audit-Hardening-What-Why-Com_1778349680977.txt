@@ -1,0 +1,81 @@
+API Server Full Production Audit & Hardening
+What & Why
+Complete production-readiness audit of the api-server. Every gap found during a deep code review must be fixed before the server can safely serve real traffic. No shortcuts, no partial fixes — the server must be fully production-grade when this task is done.
+
+Done looks like
+No duplicate route mounts anywhere in the router
+Global Express error handler catches every unhandled route error with a structured JSON response and pino log — no stack traces leak to clients
+All console.log / console.warn / console.error calls in routes, services, middleware, startup, and lib are replaced with the structured pino logger
+File uploads pass magic-byte (file signature) validation — MIME spoofing via Content-Type header is blocked
+HTTP response compression (gzip/brotli via compression package) is active for all /api responses
+securityEvents are persisted to a DB table (security_events) on every addSecurityEvent() call, not just kept in the in-memory ring buffer
+VPN/proxy detection (ip-api.com) is wrapped in a circuit-breaker with exponential back-off so production traffic is never blocked by a rate-limited third-party call
+Socket.io location events are emitted to specific ride/parcel rooms, not broadcast to all connections (resolves the TODO at socketio.ts:633)
+Every auth-required route (/pharmacy-orders, /parcel-bookings, /notifications, /addresses, /kyc, /sos, /push, /wishlist, /reviews, /recommendations, /banners) has userApiLimiter applied
+Sentry error handler (Sentry.Handlers.errorHandler()) is mounted after all routes when Sentry is initialised
+Startup tasks in runStartupTasks() and index.ts use pino logger instead of console.*
+esbuild-plugin-pino is wired into build.mjs so pino worker threads bundle correctly in production builds
+Duplicate ERROR_REPORT_HMAC_SECRET entry removed from IMPORTANT_VARS in index.ts
+Scheduler cleanup jobs run once immediately at startup, then on their normal interval — stale data is cleaned before the first request
+The simplistic /health route at app root returns the same rich DB+Redis status as /api/health (or redirects to it), so both endpoints are meaningful
+TypeScript strict-mode violations (as any, unsafe any in route handlers) replaced with proper typed interfaces in at least the security-critical paths (auth, wallet, uploads, admin)
+All changes pass pnpm --filter @workspace/api-server typecheck
+Out of scope
+PII column encryption (migration to encrypted_* columns in the DB — documented as future work)
+Cloud/S3 file storage migration (uploads stay on disk for now but magic-byte validation is added)
+Frontend app changes
+Steps
+Fix duplicate route mounts — In routes/index.ts remove the second mounts of /experiments, /whatsapp, /business-rules (lines 173–175) and the redundant second /loyalty mount with loyaltyFullRouter (line 176). Verify no handler is lost by checking what each duplicate mount was intended to serve.
+
+Add global Express error handler — After the /api/*path 404 handler in app.ts, add a four-argument (err, req, res, next) error middleware. It must: log the error with logger.error, return a JSON { success: false, error: "Internal server error" } with HTTP 500, and never echo err.message or stack traces to the client in production. Also mount Sentry.Handlers.errorHandler() here when Sentry is initialised.
+
+Replace all console.* with logger — Sweep every .ts file in src/ (routes, services, middleware, lib, startup). Replace console.log → logger.info, console.warn → logger.warn, console.error → logger.error. Preserve all message content and any structured object arguments. The startup/runStartupTasks section in app.ts and the port-handling section in index.ts both need this treatment.
+
+File upload magic-byte validation — In routes/uploads.ts, after multer writes the buffer to memory, read the first 8–16 bytes and compare against known magic numbers for JPEG (FF D8 FF), PNG (89 50 4E 47), WebP (52 49 46 46), MP4 (66 74 79 70), and WebM (1A 45 DF A3). Reject uploads whose magic bytes don't match the declared MIME type. Add a helper function validateFileMagicBytes(buffer, mimeType): boolean.
+
+Add HTTP response compression — Install compression and @types/compression in api-server. Mount compression() middleware in app.ts after cookieParser and before the /api router. Skip compression for the dev-proxy paths and the /health route.
+
+Persist security events to DB — Create a new security_events DB table (via a new migration or CREATE TABLE IF NOT EXISTS in startup, consistent with how data_export_logs was added). Update addSecurityEvent() in middleware/security.ts to fire an async DB insert alongside the in-memory push. The in-memory ring buffer stays for fast reads; the DB is the durable record.
+
+VPN detection circuit-breaker — Wrap the isVpnOrProxy() ip-api.com fetch in a simple circuit-breaker: track consecutive failures and, once 3 failures occur within 60 seconds, skip VPN checks for the next 5 minutes and log a warning. Reset the counter on the next successful call. This prevents ip-api.com rate limits from causing cascading slowdowns.
+
+Fix Socket.io room targeting — In socketio.ts around line 633, replace the generic broadcast with targeted room emits. Ride location updates should be emitted to the room ride:<rideId>; parcel updates to parcel:<bookingId>. Customers and riders join those rooms on connect. Review the existing room-join logic to make sure the room names are consistent.
+
+Apply userApiLimiter to missing routes — In routes/index.ts, add userApiLimiter to: /pharmacy-orders, /parcel-bookings, /notifications, /addresses, /kyc, /sos, /push, /wishlist, /reviews, /recommendations. These are authenticated user routes that currently have no per-user rate limit.
+
+Wire esbuild-plugin-pino into build.mjs — Import esbuildPluginPino from esbuild-plugin-pino and add it to the plugins array in build.mjs. Also externalize @sentry/node, firebase-admin, twilio, sharp, and canvas (some already are) to prevent bundling issues.
+
+Fix IMPORTANT_VARS duplicate — In src/index.ts, remove the duplicate ERROR_REPORT_HMAC_SECRET entry from the IMPORTANT_VARS array.
+
+Scheduler immediate first-run — In scheduler.ts, after registering each job with register(), also call the job function once immediately (wrapped in try/catch with logger.warn on failure). This ensures stale data is cleaned before the first interval fires.
+
+Harden TypeScript types in critical paths — Replace as any casts and any parameter types in: middleware/security.ts, middleware/auth.ts, routes/auth/index.ts, routes/wallet.ts, routes/uploads.ts, and routes/admin/system.ts. Introduce or reuse typed interfaces for request extension (e.g., AuthenticatedRequest).
+
+Enrich root /health endpoint — In app.ts, the simple GET /health at root currently returns only { status: "ok" }. Replace it with the same DB+Redis check that /api/health does (or proxy to it), so both health endpoints are production-meaningful for uptime monitors.
+
+Final verification — Run pnpm --filter @workspace/api-server typecheck and fix any new type errors introduced. Review the startup log sequence to confirm no console.* calls remain.
+
+Relevant files
+artifacts/api-server/src/index.ts
+artifacts/api-server/src/app.ts
+artifacts/api-server/src/routes/index.ts
+artifacts/api-server/src/lib/socketio.ts
+artifacts/api-server/src/lib/logger.ts
+artifacts/api-server/src/lib/redis.ts
+artifacts/api-server/src/lib/metrics/responseTime.ts
+artifacts/api-server/src/middleware/security.ts
+artifacts/api-server/src/middleware/auth.ts
+artifacts/api-server/src/middleware/rate-limit.ts
+artifacts/api-server/src/middleware/suspiciousPatternDetector.ts
+artifacts/api-server/src/middleware/gpsSpoof.ts
+artifacts/api-server/src/routes/uploads.ts
+artifacts/api-server/src/routes/health.ts
+artifacts/api-server/src/routes/auth/index.ts
+artifacts/api-server/src/routes/wallet.ts
+artifacts/api-server/src/routes/admin/system.ts
+artifacts/api-server/src/services/email.ts
+artifacts/api-server/src/services/healthAlertMonitor.ts
+artifacts/api-server/src/services/file-scanner.ts
+artifacts/api-server/src/scheduler.ts
+artifacts/api-server/build.mjs
+artifacts/api-server/package.json

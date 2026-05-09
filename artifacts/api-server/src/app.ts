@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import compression from "compression";
 import helmet from "helmet";
 import pinoHttp from "pino-http";
 import { pinoInstance, logger } from "./lib/logger.js";
@@ -54,24 +55,21 @@ export async function runStartupTasks(): Promise<void> {
      this is a hard requirement; in development it is a loud warning only. */
   if (!process.env.ERROR_REPORT_HMAC_SECRET) {
     if (process.env.NODE_ENV === "production") {
-      console.error(
-        "\n" +
-        "╔══════════════════════════════════════════════════════════════════╗\n" +
-        "║  FATAL CONFIG ERROR: ERROR_REPORT_HMAC_SECRET is not set.       ║\n" +
-        "║  Error reports from rider/vendor/customer apps cannot be         ║\n" +
-        "║  verified. Set this secret in your environment before deploying. ║\n" +
-        "╚══════════════════════════════════════════════════════════════════╝\n"
+      logger.fatal(
+        "[startup] FATAL CONFIG ERROR: ERROR_REPORT_HMAC_SECRET is not set. " +
+        "Error reports from rider/vendor/customer apps cannot be verified. " +
+        "Set this secret in your environment before deploying."
       );
       throw new Error("ERROR_REPORT_HMAC_SECRET must be set in production");
     } else {
-      console.warn(
+      logger.warn(
         "[startup] WARNING: ERROR_REPORT_HMAC_SECRET is not set. " +
         "Error report HMAC verification will be skipped. " +
         "Set this secret before deploying to production."
       );
     }
   } else {
-    console.log("[startup] ERROR_REPORT_HMAC_SECRET is configured.");
+    logger.info("[startup] ERROR_REPORT_HMAC_SECRET is configured.");
   }
 
   await runSqlMigrations();
@@ -79,86 +77,63 @@ export async function runStartupTasks(): Promise<void> {
     await seedPermissionCatalog();
     await seedDefaultRoles();
     await backfillAdminRoleAssignments();
-    console.log("[startup] RBAC seed + backfill complete");
+    logger.info("[startup] RBAC seed + backfill complete");
   } catch (err) {
-    console.error("[startup] RBAC seed/backfill failed (continuing):", err);
+    logger.error({ err }, "[startup] RBAC seed/backfill failed (continuing)");
   }
-  // Seed the default super-admin AFTER RBAC so the super_admin role exists
-  // and can be granted to the new account on first boot.
   try {
     await seedDefaultSuperAdmin();
   } catch (err) {
-    console.error("[startup] admin seed failed (continuing):", err);
+    logger.error({ err }, "[startup] admin seed failed (continuing)");
   }
-  // Reconcile any legacy seeded super-admin row (created by the old
-  // forced-password-change flow) to the documented default credentials.
-  // Idempotent: only touches a single row matched by ADMIN_SEED_USERNAME
-  // when it still carries the legacy `must_change_password = true` flag.
   try {
     await reconcileSeededSuperAdmin();
   } catch (err) {
-    console.error("[startup] admin seed reconciliation failed (continuing):", err);
+    logger.error({ err }, "[startup] admin seed reconciliation failed (continuing)");
   }
-  // Best-effort GC of stale password reset tokens (idempotent, safe to skip).
   try {
     const purged = await purgeStaleAdminPasswordResetTokens();
     if (purged > 0) {
-      console.log(`[startup] purged ${purged} expired admin password reset token(s)`);
+      logger.info({ purged }, "[startup] purged expired admin password reset token(s)");
     }
   } catch (err) {
-    console.error("[startup] reset-token purge failed (continuing):", err);
+    logger.error({ err }, "[startup] reset-token purge failed (continuing)");
   }
-  // Out-of-band admin password reset detection. Compares the current
-  // `admin_accounts.secret` against per-admin snapshots maintained by
-  // the in-app password flows; mismatches mean somebody (typically an
-  // operator) rewrote the hash directly in the database. Best-effort —
-  // never blocks boot.
   try {
     await detectAndNotifyOutOfBandPasswordResets();
   } catch (err) {
-    console.error(
-      "[startup] admin password watchdog failed (continuing):",
-      err,
-    );
+    logger.error({ err }, "[startup] admin password watchdog failed (continuing)");
   }
-  // Ensure error-monitor supplementary tables exist (error_resolution_backups,
-  // auto_resolve_log, file_scan_results). Idempotent — uses CREATE TABLE IF NOT EXISTS.
   try {
     await ensureErrorResolutionTables();
-    console.log("[startup] error-monitor supplementary tables ready");
+    logger.info("[startup] error-monitor supplementary tables ready");
   } catch (err) {
-    console.error("[startup] error-monitor table migration failed (continuing):", err);
+    logger.error({ err }, "[startup] error-monitor table migration failed (continuing)");
   }
-  // data_export_logs and sentry_known_issues are managed by Drizzle migration 0005
   try {
     await ensureCartSnapshotTable();
-    console.log("[startup] cart_snapshots table ready");
+    logger.info("[startup] cart_snapshots table ready");
   } catch (err) {
-    console.error("[startup] cart_snapshots table migration failed (continuing):", err);
+    logger.error({ err }, "[startup] cart_snapshots table migration failed (continuing)");
   }
   try {
     await ensureReferralAndPrescriptionTables();
-    console.log("[startup] referral_codes, referral_usages, pharmacy_prescription_refs tables ready");
+    logger.info("[startup] referral_codes, referral_usages, pharmacy_prescription_refs tables ready");
   } catch (err) {
-    console.error("[startup] referral/prescription table migration failed (continuing):", err);
+    logger.error({ err }, "[startup] referral/prescription table migration failed (continuing)");
   }
-  // Upsert default platform settings so every section in the Admin
-  // App Settings page shows live data immediately — without overwriting
-  // any admin-edited values (INSERT … ON CONFLICT DO NOTHING).
   try {
     if (DEFAULT_PLATFORM_SETTINGS.length > 0) {
       await db.insert(platformSettingsTable).values(DEFAULT_PLATFORM_SETTINGS).onConflictDoNothing();
-      console.log(`[startup] platform settings defaults ensured (${DEFAULT_PLATFORM_SETTINGS.length} entries)`);
+      logger.info({ count: DEFAULT_PLATFORM_SETTINGS.length }, "[startup] platform settings defaults ensured");
     }
   } catch (err) {
-    console.error("[startup] platform settings seed failed (continuing):", err);
+    logger.error({ err }, "[startup] platform settings seed failed (continuing)");
   }
-  // Start background health monitor (opt-in via health_monitor_enabled=on in platform settings).
-  // Deferred 30 s inside startHealthMonitor so the server finishes warming up first.
   try {
     startHealthMonitor();
   } catch (err) {
-    console.error("[startup] health monitor failed to start (continuing):", err);
+    logger.error({ err }, "[startup] health monitor failed to start (continuing)");
   }
   // Run schema drift check once at startup. Logs a warning when drift is found.
   // The result is cached in schemaDrift.service.ts for the health-dashboard endpoint.
@@ -214,13 +189,13 @@ export async function runStartupTasks(): Promise<void> {
           }
         })
         .catch(err => {
-          console.error("[startup] schema drift alert email failed (non-fatal):", err);
+          logger.error({ err }, "[startup] schema drift alert email failed (non-fatal)");
         });
     } else {
-      console.log(`[startup] schema drift check passed (${driftReport.totalSchemaTables} tables checked)`);
+      logger.info({ tables: driftReport.totalSchemaTables }, "[startup] schema drift check passed");
     }
   } catch (err) {
-    console.error("[startup] schema drift check failed (continuing):", err);
+    logger.error({ err }, "[startup] schema drift check failed (continuing)");
   }
 }
 
@@ -416,7 +391,7 @@ export function createServer() {
         }) as unknown as express.RequestHandler,
       );
     }
-    console.log("[dev] Sibling app proxies enabled at /admin /vendor /rider /customer /__mockup");
+    logger.info("[dev] Sibling app proxies enabled at /admin /vendor /rider /customer /__mockup");
   }
 
   // Security headers via helmet
@@ -482,6 +457,19 @@ export function createServer() {
   
   app.use(cookieParser());
 
+  /* ── HTTP response compression (gzip/brotli) ──────────────────────────────
+     Applied after cookieParser and before the API router. Skipped for
+     health and proxy paths so they are not affected. */
+  app.use(compression({
+    filter: (req, res) => {
+      const url = req.originalUrl ?? req.url ?? "";
+      if (url === "/health" || url.startsWith("/admin") || url.startsWith("/vendor") || url.startsWith("/rider") || url.startsWith("/customer") || url.startsWith("/__mockup")) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+  }));
+
   /* Capture raw body bytes on every JSON request so endpoints that rely on
      request signing (e.g. /api/error-reports HMAC-SHA256 verification) can
      hash the exact bytes the client signed, regardless of JSON formatting
@@ -496,8 +484,11 @@ export function createServer() {
   }));
   app.use(express.urlencoded({ extended: true, limit: "10kb" }));
   
-  app.get("/health", (req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  /* ── Root /health — rich DB+Redis check (same as /api/health) ───────────
+     Uptime monitors and load balancers often probe the root /health path.
+     We proxy to the full /api/health logic so both endpoints are meaningful. */
+  app.get("/health", (_req, res) => {
+    res.redirect(307, "/api/health");
   });
 
   /* ── Dev-only: hub landing page at exact "/" with one-click cards for
@@ -520,6 +511,27 @@ export function createServer() {
       success: false,
       error: `API route not found: ${req.method} ${req.originalUrl}`,
     });
+  });
+
+  /* ── Sentry error handler (must be mounted BEFORE the generic error handler) */
+  {
+    const sentryMod = (globalThis as Record<string, unknown>)["__sentryInstance"] as Record<string, unknown> | undefined;
+    if (sentryMod && typeof sentryMod["Handlers"] === "object" && sentryMod["Handlers"]) {
+      const handlers = sentryMod["Handlers"] as Record<string, unknown>;
+      if (typeof handlers["errorHandler"] === "function") {
+        app.use((handlers["errorHandler"] as () => express.ErrorRequestHandler)());
+      }
+    }
+  }
+
+  /* ── Global Express error handler ──────────────────────────────────────
+     Catches any error passed to next(err) from route handlers or middleware.
+     Never leaks stack traces or internal messages to the client in production. */
+  app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    logger.error({ err, method: req.method, url: req.originalUrl }, "[error] Unhandled route error");
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: "Internal server error" });
+    }
   });
 
   /* ── Dev-only fallback: proxy any remaining non-/api request to the

@@ -43,9 +43,6 @@ const IMPORTANT_VARS = [
   "ADMIN_REFRESH_TOKEN_SECRET",
   "ADMIN_CSRF_SECRET",
   "ERROR_REPORT_HMAC_SECRET",
-  "REPORT_SIGNATURE_SECRET", // Keep from theirs if they added it? No, wait. 
-                             // BATCH D rules: Merge BOTH sides.
-  "ERROR_REPORT_HMAC_SECRET",
 ] as const;
 
 function checkEnv(): void {
