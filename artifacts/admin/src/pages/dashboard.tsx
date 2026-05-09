@@ -10,8 +10,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fetcher } from "@/lib/api";
-import { adminGet } from "@/lib/adminFetcher";
+import { adminGet, adminPut } from "@/lib/adminFetcher";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { PullToRefresh } from "@/components/PullToRefresh";
@@ -140,13 +139,10 @@ function LiveMetricsStrip() {
   const saveThresholds = async () => {
     setSavingTh(true);
     try {
-      await fetcher("/platform-settings", {
-        method: "PUT",
-        body: JSON.stringify({ settings: [
-          { key: "dashboard_sos_threshold",     value: draftSos  || "3"  },
-          { key: "dashboard_pending_threshold", value: draftOrd  || "30" },
-        ]}),
-      });
+      await adminPut("/platform-settings", { settings: [
+        { key: "dashboard_sos_threshold",     value: draftSos  || "3"  },
+        { key: "dashboard_pending_threshold", value: draftOrd  || "30" },
+      ] });
       toast({ title: "Thresholds saved", description: "Alert thresholds updated." });
       setEditingThresholds(false);
       void refetchSettings();

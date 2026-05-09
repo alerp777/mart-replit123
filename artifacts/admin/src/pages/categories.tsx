@@ -650,8 +650,8 @@ interface CategoryCardProps {
   expanded: boolean;
   onToggleExpand: (id: string) => void;
   categories?: Category[];
-  toggleMutation: unknown;
-  deleteMutation: unknown;
+  toggleMutation: { mutate: (vars: { id: string; isActive: boolean }) => void };
+  deleteMutation: { mutate: (id: string) => void };
   openEdit: (c: Category) => void;
   moveCategory: (id: string, dir: "up" | "down", parentId?: string | null) => void;
   isDragging?: boolean;
@@ -710,13 +710,13 @@ function CategoryCard({
                     <p className="text-[11px] text-muted-foreground">{child.icon.replace("-outline", "")}</p>
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => (toggleMutation as any).mutate({ id: child.id, isActive: !child.isActive })} className="p-1.5 hover:bg-muted rounded-lg">
+                    <button onClick={() => toggleMutation.mutate({ id: child.id, isActive: !child.isActive })} className="p-1.5 hover:bg-muted rounded-lg">
                       {child.isActive ? <ToggleRight className="w-4 h-4 text-green-600" /> : <ToggleLeft className="w-4 h-4 text-muted-foreground" />}
                     </button>
                     <button onClick={() => moveCategory(child.id, "up", cat.id)} className="p-1.5 hover:bg-muted rounded-lg"><ArrowUp className="w-3.5 h-3.5 text-muted-foreground" /></button>
                     <button onClick={() => moveCategory(child.id, "down", cat.id)} className="p-1.5 hover:bg-muted rounded-lg"><ArrowDown className="w-3.5 h-3.5 text-muted-foreground" /></button>
                     <button onClick={() => openEdit(child)} className="p-1.5 hover:bg-muted rounded-lg"><Pencil className="w-3.5 h-3.5 text-blue-600" /></button>
-                    <button onClick={() => { if (confirm(`Delete "${child.name}"?`)) (deleteMutation as any).mutate(child.id); }} className="p-1.5 hover:bg-red-50 rounded-lg"><Trash2 className="w-3.5 h-3.5 text-red-500" /></button>
+                    <button onClick={() => { if (confirm(`Delete "${child.name}"?`)) deleteMutation.mutate(child.id); }} className="p-1.5 hover:bg-red-50 rounded-lg"><Trash2 className="w-3.5 h-3.5 text-red-500" /></button>
                   </div>
                 </div>
               </CardContent>

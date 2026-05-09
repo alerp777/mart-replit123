@@ -97,11 +97,16 @@ import WhatsAppDeliveryLog from "@/pages/whatsapp-delivery-log";
 import HealthDashboard from "@/pages/health-dashboard";
 import NotFound from "@/pages/not-found";
 
+// Retry once on transient errors (network blips, 5xx) with a fixed 1 s pause,
+// instead of the React Query default of retry:3 which causes multi-second
+// stalls in the admin UI before a query is declared failed.
+const QUERY_RETRY_COUNT = 1;
+const QUERY_RETRY_DELAY_MS = 1_000;
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
-      retryDelay: 1000,
+      retry: QUERY_RETRY_COUNT,
+      retryDelay: QUERY_RETRY_DELAY_MS,
       refetchOnWindowFocus: false,
     },
   },

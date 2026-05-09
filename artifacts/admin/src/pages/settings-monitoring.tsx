@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { renderSection, Setting, CatKey } from "./settings-render";
+import { renderSection, CatKey, SettingsSectionProps } from "./settings-render";
 import { Server, Clock, Wifi, MapPin, ImageUp, List, SlidersHorizontal } from "lucide-react";
 
 const MONITORING_CAT_CONFIG: Record<string, { label: string; icon: React.ElementType; color: string; bg: string; description: string }> = {
@@ -33,16 +33,7 @@ function getPlaceholder(key: string) {
   return "";
 }
 
-interface MonitoringSectionProps {
-  settings: Setting[];
-  grouped: Record<string, Setting[]>;
-  localValues: Record<string, string>;
-  dirtyKeys: Set<string>;
-  handleChange: (key: string, value: string) => void;
-  handleToggle: (key: string, val: boolean) => void;
-}
-
-export function MonitoringSection({ settings, grouped, localValues, dirtyKeys, handleChange, handleToggle }: MonitoringSectionProps) {
+export function MonitoringSection({ settings, grouped, localValues, dirtyKeys, handleChange, handleToggle }: SettingsSectionProps) {
   const cats = MONITORING_CATS.filter(cat => (grouped[cat]?.length ?? 0) > 0);
 
   if (cats.length === 0) {

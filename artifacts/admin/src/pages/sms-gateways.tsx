@@ -199,7 +199,7 @@ export default function SmsGateways() {
                     className="rounded-xl pr-10"
                     placeholder={field.placeholder}
                     type={field.secret && !showSecret[field.key] ? "password" : "text"}
-                    value={(form as any)[field.key] ?? ""}
+                    value={(form[field.key as keyof typeof emptyForm] ?? "") as string}
                     onChange={e => setForm(f => ({ ...f, [field.key]: e.target.value }))}
                   />
                   {field.secret && (

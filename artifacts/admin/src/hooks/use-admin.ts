@@ -170,14 +170,16 @@ export const useUpdateOrder = () => {
       queryClient.getQueriesData({ queryKey: ["admin-orders-enriched"] }).forEach(([key, data]) => {
         previousQueries.push({ queryKey: key as unknown[], data });
       });
+      type OrdersCacheEntry = { orders: Array<Record<string, unknown>> } & Record<string, unknown>;
       queryClient.setQueriesData(
         { queryKey: ["admin-orders-enriched"], exact: false },
-        (old: any) => {
-          if (!old?.orders) return old;
+        (old: unknown) => {
+          const cache = old as OrdersCacheEntry | undefined;
+          if (!cache?.orders) return old;
           return {
-            ...old,
-            orders: old.orders.map((o: any) =>
-              o.id === variables.id ? { ...o, status: variables.status, updatedAt: new Date().toISOString() } : o
+            ...cache,
+            orders: cache.orders.map(o =>
+              o["id"] === variables.id ? { ...o, status: variables.status, updatedAt: new Date().toISOString() } : o
             ),
           };
         },
@@ -349,11 +351,11 @@ export const useCategories = () => {
       if (!res.ok) throw new Error("Failed to fetch categories");
       const json = await res.json();
       const payload = json.data ?? json;
-      const list: any[] = Array.isArray(payload) ? payload : (payload.categories ?? []);
-      return list.map((c: any) => ({
-        id: String(c.id),
-        name: String(c.name),
-        icon: c.icon ?? undefined,
+      const list = (Array.isArray(payload) ? payload : (payload.categories ?? [])) as Array<Record<string, unknown>>;
+      return list.map(c => ({
+        id: String(c["id"]),
+        name: String(c["name"]),
+        icon: c["icon"] != null ? String(c["icon"]) : undefined,
       })) as { id: string; name: string; icon?: string }[];
     },
     staleTime: 5 * 60 * 1000,
@@ -371,7 +373,7 @@ export const useProducts = () => {
 export const useCreateProduct = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) =>
+    mutationFn: (data: Record<string, unknown>) =>
       fetcher("/products", {
         method: "POST",
         body: JSON.stringify(data),
@@ -386,7 +388,7 @@ export const useCreateProduct = () => {
 export const useUpdateProduct = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: any) =>
+    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
       fetcher(`/products/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),
@@ -472,9 +474,16 @@ export const useOrderRefund = () => {
 };
 
 // Broadcast
+interface BroadcastInput {
+  title: string;
+  body: string;
+  target?: string;
+  targetRole?: string | string[];
+  data?: Record<string, unknown>;
+}
 export const useBroadcast = () => {
   return useMutation({
-    mutationFn: (data: any) =>
+    mutationFn: (data: BroadcastInput) =>
       fetcher("/broadcast", {
         method: "POST",
         body: JSON.stringify(data),

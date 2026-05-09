@@ -12,6 +12,17 @@ import { Toggle, Field, SLabel } from "@/components/AdminShared";
 import { ManageInSettingsLink } from "@/components/shared";
 
 export interface Setting { key: string; value: string; label: string; category: string; }
+
+/** Shared props contract for extracted settings tab sections (General, Notifications, Monitoring). */
+export interface SettingsSectionProps {
+  settings: Setting[];
+  grouped: Record<string, Setting[]>;
+  localValues: Record<string, string>;
+  dirtyKeys: Set<string>;
+  handleChange: (key: string, value: string) => void;
+  handleToggle: (key: string, val: boolean) => void;
+}
+
 export type CatKey = 
   "general" | "features" | "rides" | "orders" | "delivery" |
   "customer" | "rider" | "vendor" | "finance" | "payment" |

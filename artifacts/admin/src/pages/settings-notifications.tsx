@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { renderSection, Setting, CatKey } from "./settings-render";
+import { renderSection, CatKey, SettingsSectionProps } from "./settings-render";
 import { Bell, MessageSquare } from "lucide-react";
 
 const NOTIF_CAT_CONFIG: Record<string, { label: string; icon: React.ElementType; color: string; bg: string; description: string }> = {
@@ -30,16 +30,7 @@ function getPlaceholder(key: string) {
   return "";
 }
 
-interface NotificationsSectionProps {
-  settings: Setting[];
-  grouped: Record<string, Setting[]>;
-  localValues: Record<string, string>;
-  dirtyKeys: Set<string>;
-  handleChange: (key: string, value: string) => void;
-  handleToggle: (key: string, val: boolean) => void;
-}
-
-export function NotificationsSection({ settings, grouped, localValues, dirtyKeys, handleChange, handleToggle }: NotificationsSectionProps) {
+export function NotificationsSection({ settings, grouped, localValues, dirtyKeys, handleChange, handleToggle }: SettingsSectionProps) {
   const cats = NOTIF_CATS.filter(cat => (grouped[cat]?.length ?? 0) > 0);
 
   if (cats.length === 0) {

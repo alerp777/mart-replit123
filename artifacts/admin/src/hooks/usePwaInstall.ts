@@ -16,9 +16,10 @@ export function usePwaInstall() {
   });
 
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  interface NavigatorWithStandalone extends Navigator { standalone?: boolean; }
   const isStandalone =
     window.matchMedia("(display-mode: standalone)").matches ||
-    (window.navigator as any).standalone === true;
+    (window.navigator as NavigatorWithStandalone).standalone === true;
 
   useEffect(() => {
     if (isStandalone) { setIsInstalled(true); return; }

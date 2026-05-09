@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { renderSection, Setting, CatKey } from "./settings-render";
+import { renderSection, CatKey, SettingsSectionProps } from "./settings-render";
 import {
   Globe, Zap, Languages,
 } from "lucide-react";
@@ -28,16 +28,7 @@ function getPlaceholder(key: string) {
   return "";
 }
 
-interface GeneralSectionProps {
-  settings: Setting[];
-  grouped: Record<string, Setting[]>;
-  localValues: Record<string, string>;
-  dirtyKeys: Set<string>;
-  handleChange: (key: string, value: string) => void;
-  handleToggle: (key: string, val: boolean) => void;
-}
-
-export function GeneralSection({ settings, grouped, localValues, dirtyKeys, handleChange, handleToggle }: GeneralSectionProps) {
+export function GeneralSection({ settings, grouped, localValues, dirtyKeys, handleChange, handleToggle }: SettingsSectionProps) {
   const cats = GENERAL_CATS.filter(cat => (grouped[cat]?.length ?? 0) > 0);
 
   if (cats.length === 0) {
