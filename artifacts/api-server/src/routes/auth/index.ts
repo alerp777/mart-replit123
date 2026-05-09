@@ -47,7 +47,7 @@ import { encrypt, decrypt, isEncryptionAvailable } from "../../lib/crypto/encryp
 import { getUserLanguage, getPlatformDefaultLanguage } from "../../lib/getUserLanguage.js";
 import { t, type TranslationKey } from "@workspace/i18n";
 import { logger } from "../../lib/logger.js";
-import { sendError, sendUnauthorized, sendForbidden, sendNotFound, sendInternalError, sendTooManyRequests } from "../../lib/response.js";
+import { sendError, sendErrorWithData, sendUnauthorized, sendForbidden, sendNotFound, sendInternalError, sendTooManyRequests, sendSuccess, sendCreated } from "../../lib/response.js";
 import { clearSpoofHits } from "../rider/index.js";
 import { canonicalizePhone } from "@workspace/phone-utils";
 import { isAuthMethodEnabled, isAuthMethodEnabledStrict } from "@workspace/auth-utils/server";
@@ -228,7 +228,7 @@ router.get("/config", async (_req, res) => {
     
     const bypassMessage = settings["otp_bypass_message"] ?? null;
     
-    res.json({
+    sendSuccess(res, {
       auth_mode:             settings["auth_mode"]             ?? "OTP",
       firebase_enabled:      settings["firebase_enabled"]      ?? "off",
       auth_otp_enabled:      settings["auth_otp_enabled"]      ?? "on",
@@ -241,7 +241,7 @@ router.get("/config", async (_req, res) => {
     });
   } catch (e) {
     logger.error({ error: e }, "[/auth/config] Failed to get config");
-    res.json({ 
+    sendSuccess(res, { 
       auth_mode: "OTP", 
       firebase_enabled: "off", 
       auth_otp_enabled: "on", 
@@ -319,10 +319,10 @@ router.get("/otp-status", async (req, res) => {
       }
     }
 
-    res.json({ bypassActive, bypassExpiresAt, message });
+    sendSuccess(res, { bypassActive, bypassExpiresAt, message });
   } catch (e) {
     logger.error({ error: e }, "[/auth/otp-status] Failed");
-    res.json({ bypassActive: false, bypassExpiresAt: null, message: null });
+    sendSuccess(res, { bypassActive: false, bypassExpiresAt: null, message: null });
   }
 });
 
@@ -393,7 +393,7 @@ router.post("/check-identifier", checkIdentifierLimiter, sharedValidateBody(chec
   if (!looksLikePhone && !looksLikeEmail) {
     if (user?.isBanned) {
       addSecurityEvent({ type: "banned_user_identifier_check", ip, userId: user.id, details: `Banned user check: ${identifier}`, severity: "medium" });
-      res.json({ isBanned: true, action: "blocked", availableMethods: [] });
+      sendSuccess(res, { isBanned: true, action: "blocked", availableMethods: [] });
       return;
     }
     const maxAttempts    = parseInt(settings["security_login_max_attempts"] ?? "5", 10);
@@ -401,7 +401,7 @@ router.post("/check-identifier", checkIdentifierLimiter, sharedValidateBody(chec
     const lockoutKey     = identifier.trim();
     const lockout        = await checkLockout(lockoutKey, maxAttempts, lockoutMinutes);
     if (lockout.locked) {
-      res.json({ isLocked: true, lockedMinutes: lockout.minutesLeft, action: "locked", availableMethods: [] });
+      sendSuccess(res, { isLocked: true, lockedMinutes: lockout.minutesLeft, action: "locked", availableMethods: [] });
       return;
     }
   } else {
@@ -489,7 +489,7 @@ router.post("/check-identifier", checkIdentifierLimiter, sharedValidateBody(chec
   if (whatsappOn) otpChannels.push("whatsapp");
   if (smsOn)      otpChannels.push("sms");
 
-  res.json({
+  sendSuccess(res, {
     registrationOpen,
     action,
     reason: noMethodReason,
@@ -553,13 +553,13 @@ router.post("/send-merge-otp", async (req, res) => {
       sent = smsResult.sent;
     }
     const isDev = process.env.NODE_ENV !== "production";
-    res.json({ message: "OTP sent to phone" });
+    sendSuccess(res, undefined, "OTP sent to phone");
   } else {
     const email = identifier.trim().toLowerCase();
     const lang = await getUserLanguage(auth.userId);
     const [user] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, auth.userId)).limit(1);
     await sendPasswordResetEmail(email, otp, user?.name ?? undefined, lang);
-    res.json({ message: "OTP sent to email" });
+    sendSuccess(res, undefined, "OTP sent to email");
   }
 
   writeAuthAuditLog("merge_otp_sent", { ip, userId: auth.userId, userAgent: req.headers["user-agent"] ?? undefined, metadata: { identifier } });
@@ -614,7 +614,7 @@ router.post("/merge-account", async (req, res) => {
     await db.update(usersTable).set({ phone, encryptedPhone: tryEncrypt(phone), mergeOtpCode: null, mergeOtpExpiry: null, phoneVerified: true, pendingMergeIdentifier: null, updatedAt: new Date() }).where(eq(usersTable.id, auth.userId));
 
     writeAuthAuditLog("account_merge_phone", { ip, userId: auth.userId, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
-    res.json({ success: true, message: "Phone number linked successfully", linked: "phone" });
+    sendSuccess(res, { success: true, message: "Phone number linked successfully", linked: "phone" });
   } else {
     const email = normalizedIdentifier;
     if (currentUser.email === email) { sendError(res, "This email is already linked to your account", 400); return; }
@@ -625,7 +625,7 @@ router.post("/merge-account", async (req, res) => {
     await db.update(usersTable).set({ email, encryptedEmail: tryEncrypt(email), mergeOtpCode: null, mergeOtpExpiry: null, emailVerified: true, pendingMergeIdentifier: null, updatedAt: new Date() }).where(eq(usersTable.id, auth.userId));
 
     writeAuthAuditLog("account_merge_email", { ip, userId: auth.userId, userAgent: req.headers["user-agent"] ?? undefined, metadata: { email } });
-    res.json({ success: true, message: "Email linked successfully", linked: "email" });
+    sendSuccess(res, { success: true, message: "Email linked successfully", linked: "email" });
   }
 });
 
@@ -640,7 +640,7 @@ router.post("/send-otp", otpLimiter, verifyCaptcha, sharedValidateBody(sendOtpSc
   const phone = canonicalizePhone(rawPhone);
 
   if (!(await isValidCanonicalPhone(phone))) {
-    res.status(400).json({ error: "Invalid phone number. Please enter a valid Pakistani mobile number (e.g. 03001234567).", field: "phone" });
+    sendErrorWithData(res, "Invalid phone number. Please enter a valid Pakistani mobile number (e.g. 03001234567).", { field: "phone" }, 400);
     return;
   }
 
@@ -676,10 +676,7 @@ router.post("/send-otp", otpLimiter, verifyCaptcha, sharedValidateBody(sendOtpSc
   const lockoutStatus = await checkLockout(phone, maxAttempts, lockoutMinutes);
   if (lockoutStatus.locked) {
     addSecurityEvent({ type: "locked_account_otp_request", ip, details: `OTP request for locked phone: ${phone}`, severity: "medium" });
-    res.status(429).json({
-      error: `Account temporarily locked due to too many failed attempts. Please try again in ${lockoutStatus.minutesLeft} minute(s).`,
-      lockedMinutes: lockoutStatus.minutesLeft,
-    });
+    sendErrorWithData(res, `Account temporarily locked due to too many failed attempts. Please try again in ${lockoutStatus.minutesLeft} minute(s).`, { lockedMinutes: lockoutStatus.minutesLeft }, 429);
     return;
   }
 
@@ -711,7 +708,7 @@ router.post("/send-otp", otpLimiter, verifyCaptcha, sharedValidateBody(sendOtpSc
     if (issuedAgoMs < otpCooldownMs) {
       const waitSec = Math.ceil((otpCooldownMs - issuedAgoMs) / 1000);
       addSecurityEvent({ type: "otp_resend_throttle", ip, details: `OTP resend too soon for ${phone} — ${waitSec}s remaining`, severity: "low" });
-      res.status(429).json({ error: `Please wait ${waitSec} second(s) before requesting a new OTP.`, retryAfterSeconds: waitSec });
+      sendErrorWithData(res, `Please wait ${waitSec} second(s) before requesting a new OTP.`, { retryAfterSeconds: waitSec }, 429);
       return;
     }
   }
@@ -723,7 +720,7 @@ router.post("/send-otp", otpLimiter, verifyCaptcha, sharedValidateBody(sendOtpSc
       ? "Too many OTP requests from your network"
       : "Too many OTP requests for this account";
     addSecurityEvent({ type: "otp_rate_limit_exceeded", ip, details: `${label} (${phone}) — retry in ${otpRateCheck.retryAfterSeconds}s`, severity: "medium" });
-    res.status(429).json({ error: `${label}. Please wait ${otpRateCheck.retryAfterSeconds} second(s) before trying again.`, retryAfterSeconds: otpRateCheck.retryAfterSeconds });
+    sendErrorWithData(res, `${label}. Please wait ${otpRateCheck.retryAfterSeconds} second(s) before trying again.`, { retryAfterSeconds: otpRateCheck.retryAfterSeconds }, 429);
     return;
   }
 
@@ -738,7 +735,7 @@ router.post("/send-otp", otpLimiter, verifyCaptcha, sharedValidateBody(sendOtpSc
     // no user notification — bypass is silent by admin design
     writeAuthAuditLog("otp_send_bypassed", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
     const bypassUntil = existingUser[0]!.otpBypassUntil!;
-    res.json({
+    sendSuccess(res, {
       otpRequired: false,
       bypass: true,
       expiresAt: bypassUntil.toISOString(),
@@ -752,7 +749,7 @@ router.post("/send-otp", otpLimiter, verifyCaptcha, sharedValidateBody(sendOtpSc
   /* ── Global OTP bypass: when enabled in Danger Zone, skip OTP for all users ── */
   if (settings["security_otp_bypass"] === "on") {
     writeAuthAuditLog("otp_send_global_bypassed", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
-    res.json({
+    sendSuccess(res, {
       otpRequired: false,
       bypass: true,
       expiresAt: null,
@@ -769,7 +766,7 @@ router.post("/send-otp", otpLimiter, verifyCaptcha, sharedValidateBody(sendOtpSc
     const otpGlobalDisabledUntilSend = new Date(otpGlobalDisabledUntilStrSend);
     if (otpGlobalDisabledUntilSend > new Date()) {
       writeAuthAuditLog("otp_send_global_bypassed", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone, reason: "timed_disable" } });
-      res.json({
+      sendSuccess(res, {
         otpRequired: false,
         bypass: true,
         expiresAt: otpGlobalDisabledUntilSend.toISOString(),
@@ -807,7 +804,7 @@ router.post("/send-otp", otpLimiter, verifyCaptcha, sharedValidateBody(sendOtpSc
   /* If whitelisted, skip SMS entirely and return bypass shape */
   if (whitelistBypass) {
     writeAuthAuditLog("otp_send_whitelist_bypass", { ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { phone } });
-    res.json({
+    sendSuccess(res, {
       otpRequired: false,
       bypass: true,
       expiresAt: null,
@@ -879,10 +876,7 @@ router.post("/send-otp", otpLimiter, verifyCaptcha, sharedValidateBody(sendOtpSc
         userAgent: req.headers["user-agent"] ?? undefined,
         metadata: { phone, reason: "no_provider_strict_block" },
       });
-      res.status(503).json({
-        error: "OTP delivery is not configured. Please contact support.",
-        noProviderConfigured: true,
-      });
+      sendErrorWithData(res, "OTP delivery is not configured. Please contact support.", { noProviderConfigured: true }, 503);
       return;
     }
     logger.warn({ phone }, "[OTP] No delivery provider configured — auto-bypassing OTP (bypass mode)");
@@ -891,7 +885,7 @@ router.post("/send-otp", otpLimiter, verifyCaptcha, sharedValidateBody(sendOtpSc
       userAgent: req.headers["user-agent"] ?? undefined,
       metadata: { phone, reason: "no_delivery_provider_bypass" },
     });
-    res.json({
+    sendSuccess(res, {
       otpRequired: false,
       message: "OTP sent successfully",
       channel: "auto_bypass",
@@ -927,7 +921,7 @@ router.post("/send-otp", otpLimiter, verifyCaptcha, sharedValidateBody(sendOtpSc
       logger.warn({ phone }, "All OTP delivery channels failed — returning OTP in dev mode");
     } else {
       logger.error({ phone }, "All OTP delivery channels failed");
-      res.status(502).json({ error: "Could not deliver OTP. Please try again or use an alternative login method.", fallbackChannels: availableChannels });
+      sendErrorWithData(res, "Could not deliver OTP. Please try again or use an alternative login method.", { fallbackChannels: availableChannels }, 502);
       return;
     }
   }
@@ -948,7 +942,7 @@ router.post("/send-otp", otpLimiter, verifyCaptcha, sharedValidateBody(sendOtpSc
     fallbackChannels,
   };
 
-  res.json(response);
+  sendSuccess(res, response);
 });
 
 /* ─────────────────────────────────────────────────────────────
@@ -959,7 +953,7 @@ router.post("/verify-otp", otpLimiter, verifyCaptcha, sharedValidateBody(verifyO
   const phone = canonicalizePhone(req.body.phone);
 
   if (!(await isValidCanonicalPhone(phone))) {
-    res.status(400).json({ error: "Invalid phone number format.", field: "phone" });
+    sendErrorWithData(res, "Invalid phone number format.", { field: "phone" }, 400);
     return;
   }
 
@@ -989,10 +983,7 @@ router.post("/verify-otp", otpLimiter, verifyCaptcha, sharedValidateBody(verifyO
   const lockoutStatus = await checkLockout(phone, maxAttempts, lockoutMinutes);
   if (lockoutStatus.locked && !isTimedGlobalDisableActive) {
     addAuditEntry({ action: "verify_otp_lockout", ip, details: `Locked account OTP attempt: ${phone}`, result: "fail" });
-    res.status(429).json({
-      error: `Account temporarily locked. Please try again in ${lockoutStatus.minutesLeft} minute(s).`,
-      lockedMinutes: lockoutStatus.minutesLeft,
-    });
+    sendErrorWithData(res, `Account temporarily locked. Please try again in ${lockoutStatus.minutesLeft} minute(s).`, { lockedMinutes: lockoutStatus.minutesLeft }, 429);
     return;
   }
 
@@ -1009,10 +1000,7 @@ router.post("/verify-otp", otpLimiter, verifyCaptcha, sharedValidateBody(verifyO
        Block auto-registration for these roles to prevent cross-app token issuance. */
     const requestedRoleForNew = req.body.role as string | undefined;
     if (requestedRoleForNew && requestedRoleForNew !== "customer") {
-      res.status(403).json({
-        error: `No ${requestedRoleForNew} account found for this phone number. Please use the correct registration process or contact admin.`,
-        wrongApp: true,
-      });
+      sendErrorWithData(res, `No ${requestedRoleForNew} account found for this phone number. Please use the correct registration process or contact admin.`, { wrongApp: true }, 403);
       return;
     }
 
@@ -1046,13 +1034,10 @@ router.post("/verify-otp", otpLimiter, verifyCaptcha, sharedValidateBody(verifyO
 
       if (newAttempts >= maxAttempts) {
         await db.delete(pendingOtpsTable).where(eq(pendingOtpsTable.phone, phone));
-        res.status(429).json({ error: `Too many failed attempts. Please request a new OTP.`, lockedMinutes: 1 });
+        sendErrorWithData(res, `Too many failed attempts. Please request a new OTP.`, { lockedMinutes: 1 }, 429);
       } else {
         const remaining = maxAttempts - newAttempts;
-        res.status(401).json({
-          error: `Invalid OTP. ${remaining > 0 ? `${remaining} attempt(s) remaining.` : "Please request a new OTP."}`,
-          attemptsRemaining: Math.max(0, remaining),
-        });
+        sendErrorWithData(res, `Invalid OTP. ${remaining > 0 ? `${remaining} attempt(s) remaining.` : "Please request a new OTP."}`, { attemptsRemaining: Math.max(0, remaining) }, 401);
       }
       return;
     }
@@ -1103,7 +1088,7 @@ router.post("/verify-otp", otpLimiter, verifyCaptcha, sharedValidateBody(verifyO
        checks both body role AND user roles so this is safe either way. */
     setRiderRefreshCookie(req, res, refreshRaw, { roles: "customer" });
 
-    res.json({
+    sendSuccess(res, {
       token: accessToken,
       refreshToken: refreshRaw,
       expiresAt: new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString(),
@@ -1132,7 +1117,7 @@ router.post("/verify-otp", otpLimiter, verifyCaptcha, sharedValidateBody(verifyO
     const userRoles = (user.roles || "customer").split(",").map((r: string) => r.trim());
     if (!userRoles.includes(requestedRole)) {
       addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: user.id, details: `User with roles [${user.roles}] tried to log in as ${requestedRole}`, severity: "high" });
-      res.status(403).json({ error: "This account is not registered as a " + requestedRole + ". Please use the correct app.", wrongApp: true });
+      sendErrorWithData(res, "This account is not registered as a " + requestedRole + ". Please use the correct app.", { wrongApp: true }, 403);
       return;
     }
   }
@@ -1150,7 +1135,7 @@ router.post("/verify-otp", otpLimiter, verifyCaptcha, sharedValidateBody(verifyO
      them to use Google instead without disclosing anything about other numbers. ── */
   if (user.googleId && isAuthMethodEnabled(await getCachedSettings(), "auth_google_enabled", user.roles ?? undefined)) {
     addSecurityEvent({ type: "otp_hijack_google_account", ip, userId: user.id, details: `OTP verify attempted on Google-linked account: ${phone}`, severity: "medium" });
-    res.status(403).json({ error: "This account is linked to Google. Please sign in with Google.", useGoogle: true });
+    sendErrorWithData(res, "This account is linked to Google. Please sign in with Google.", { useGoogle: true }, 403);
     return;
   }
 
@@ -1286,12 +1271,9 @@ router.post("/verify-otp", otpLimiter, verifyCaptcha, sharedValidateBody(verifyO
         writeAuthAuditLog("otp_failed", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined });
         if (updated.lockedUntil) {
           addSecurityEvent({ type: "account_locked", ip, userId: user.id, details: `Account locked after ${maxAttempts} failed OTP attempts`, severity: "high" });
-          res.status(429).json({ error: `Too many failed attempts. Account locked for ${lockoutMinutes} minutes.`, lockedMinutes: lockoutMinutes });
+          sendErrorWithData(res, `Too many failed attempts. Account locked for ${lockoutMinutes} minutes.`, { lockedMinutes: lockoutMinutes }, 429);
         } else {
-          res.status(401).json({
-            error: `Invalid OTP. ${remaining > 0 ? `${remaining} attempt(s) remaining before lockout.` : "Next failure will lock your account."}`,
-            attemptsRemaining: Math.max(0, remaining),
-          });
+          sendErrorWithData(res, `Invalid OTP. ${remaining > 0 ? `${remaining} attempt(s) remaining before lockout.` : "Next failure will lock your account."}`, { attemptsRemaining: Math.max(0, remaining) }, 401);
         }
       }
       return;
@@ -1309,7 +1291,7 @@ router.post("/verify-otp", otpLimiter, verifyCaptcha, sharedValidateBody(verifyO
   if (u.approvalStatus === "pending") {
     addAuditEntry({ action: "user_login_pending", ip, details: `Pending approval login for phone: ${phone}`, result: "pending" });
     const token = signAccessToken(u.id, phone, u.roles ?? "customer", u.roles ?? "customer", u.tokenVersion ?? 0);
-    res.json({
+    sendSuccess(res, {
       token, pendingApproval: true,
       message: "Aapka account admin approval ke liye bheja gaya hai. Approve hone par aap login kar sakenge.",
       user: { id: u.id, phone: u.phone, name: u.name, role: u.roles, roles: u.roles, approvalStatus: "pending" },
@@ -1317,7 +1299,7 @@ router.post("/verify-otp", otpLimiter, verifyCaptcha, sharedValidateBody(verifyO
     return;
   }
   if (u.approvalStatus === "rejected") {
-    res.status(403).json({ error: "Aapka account reject kar diya gaya hai. Admin se rabta karein.", code: "APPROVAL_REJECTED", approvalStatus: "rejected", rejectionReason: u.approvalNote ?? null });
+    sendErrorWithData(res, "Aapka account reject kar diya gaya hai. Admin se rabta karein.", { code: "APPROVAL_REJECTED", approvalStatus: "rejected", rejectionReason: u.approvalNote ?? null }, 403);
     return;
   }
 
@@ -1327,7 +1309,7 @@ router.post("/verify-otp", otpLimiter, verifyCaptcha, sharedValidateBody(verifyO
     const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
     if (!isDeviceTrusted(u, deviceFingerprint, trustedDays)) {
       const tempToken = sign2faChallengeToken(u.id, u.phone ?? "", u.roles ?? "customer", u.roles ?? "customer", "phone_otp");
-      res.json({ requires2FA: true, tempToken, userId: u.id }); return;
+      sendSuccess(res, { requires2FA: true, tempToken, userId: u.id }); return;
     }
   }
 
@@ -1364,7 +1346,7 @@ router.post("/verify-otp", otpLimiter, verifyCaptcha, sharedValidateBody(verifyO
   const uRoles = (u.roles || "customer").split(",").map((r: string) => r.trim());
   if (isCustomerAppContext && !uRoles.includes("customer")) {
     addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: u.id, details: `User with roles [${u.roles}] logged in to customer app context — offering add-role`, severity: "low" });
-    res.json({
+    sendSuccess(res, {
       token:        accessToken,
       refreshToken: refreshRaw,
       expiresAt:    new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString(),
@@ -1397,7 +1379,7 @@ router.post("/verify-otp", otpLimiter, verifyCaptcha, sharedValidateBody(verifyO
     ? (u.acceptedTermsVersion ?? null) !== currentTermsVersion
     : false;
 
-  res.json({
+  sendSuccess(res, {
     token:        accessToken,
     refreshToken: refreshRaw,
     expiresAt:    new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString(),
@@ -1470,11 +1452,11 @@ router.post("/vendor-register", async (req, res) => {
   const existingRoles = (user.roles || "").split(",").map((r: string) => r.trim()).filter(Boolean);
   if (existingRoles.includes("vendor")) {
     if (user.approvalStatus === "pending") {
-      res.json({ success: true, status: "pending", message: "Your vendor application is already pending admin approval." });
+      sendSuccess(res, { success: true, status: "pending", message: "Your vendor application is already pending admin approval." });
       return;
     }
     if (user.approvalStatus === "approved") {
-      res.json({ success: true, status: "approved", message: "You are already approved as a vendor." });
+      sendSuccess(res, { success: true, status: "approved", message: "You are already approved as a vendor." });
       return;
     }
   }
@@ -1554,7 +1536,7 @@ router.post("/vendor-register", async (req, res) => {
     ).catch(() => {});
   }
 
-  res.json({
+  sendSuccess(res, {
     success: true,
     status: autoApprove ? "approved" : "pending",
     message: autoApprove
@@ -1591,7 +1573,7 @@ router.post("/validate-token", async (req, res) => {
     }
 
     const expiresAt = payload.exp ? new Date(payload.exp * 1000).toISOString() : null;
-    res.json({ valid: true, expiresAt, userId: user.id, role: user.roles });
+    sendSuccess(res, { valid: true, expiresAt, userId: user.id, role: user.roles });
   } catch {
     sendUnauthorized(res, "Token validation failed");
   }
@@ -1735,7 +1717,7 @@ async function doRefresh(refreshToken: string, ip: string, req: Request, res: an
   setRiderRefreshCookie(req, res, rotation.refreshToken, user);
   setVendorRefreshCookie(req, res, rotation.refreshToken, user);
 
-  res.json({
+  sendSuccess(res, {
     token:        rotation.accessToken,
     refreshToken: rotation.refreshToken,
     expiresAt:    rotation.expiresAt,
@@ -1798,7 +1780,7 @@ router.post("/logout", async (req, res) => {
   clearRiderRefreshCookie(res);
   clearVendorRefreshCookie(res);
 
-  res.json({ success: true, message: "Logged out successfully" });
+  sendSuccess(res, undefined, "Logged out successfully");
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -1841,7 +1823,7 @@ router.post("/check-available", async (req, res) => {
       : { available: true,  message: "Available" };
   }
 
-  res.json(result);
+  sendSuccess(res, result);
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -1867,7 +1849,7 @@ router.post("/send-email-otp", verifyCaptcha, async (req, res) => {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.email, normalized)).limit(1);
   if (!user) {
     const isDev = process.env.NODE_ENV !== "production";
-    res.json({ message: "If an account exists with this email, an OTP has been sent.", ...(isDev ? { hint: "No account found" } : {}) });
+    sendSuccess(res, { message: "If an account exists with this email, an OTP has been sent.", ...(isDev ? { hint: "No account found" } : {}) });
     return;
   }
 
@@ -1898,7 +1880,7 @@ router.post("/send-email-otp", verifyCaptcha, async (req, res) => {
     if (issuedAgoMs < otpCooldownMs) {
       const waitSec = Math.ceil((otpCooldownMs - issuedAgoMs) / 1000);
       addAuditEntry({ action: "email_otp_throttle", ip, details: `Email OTP resend too soon for ${normalized} — ${waitSec}s remaining`, result: "fail" });
-      res.status(429).json({ error: `Please wait ${waitSec} second(s) before requesting a new email OTP.`, retryAfterSeconds: waitSec });
+      sendErrorWithData(res, `Please wait ${waitSec} second(s) before requesting a new email OTP.`, { retryAfterSeconds: waitSec }, 429);
       return;
     }
   }
@@ -1910,7 +1892,7 @@ router.post("/send-email-otp", verifyCaptcha, async (req, res) => {
       ? "Too many OTP requests from your network"
       : "Too many OTP requests for this email";
     addAuditEntry({ action: "email_otp_rate_limit", ip, details: `${label} (${normalized}) — retry in ${emailRateCheck.retryAfterSeconds}s`, result: "fail" });
-    res.status(429).json({ error: `${label}. Please wait ${emailRateCheck.retryAfterSeconds} second(s) before trying again.`, retryAfterSeconds: emailRateCheck.retryAfterSeconds });
+    sendErrorWithData(res, `${label}. Please wait ${emailRateCheck.retryAfterSeconds} second(s) before trying again.`, { retryAfterSeconds: emailRateCheck.retryAfterSeconds }, 429);
     return;
   }
 
@@ -1942,7 +1924,7 @@ router.post("/send-email-otp", verifyCaptcha, async (req, res) => {
   addAuditEntry({ action: "email_otp_sent", ip, details: `Email OTP for: ${normalized} (delivered: ${emailResult.sent})`, result: "success" });
 
   const emailConsoleFallback = !emailResult.sent;
-  res.json({
+  sendSuccess(res, {
     message: "OTP aapki email par bhej diya gaya hai",
     channel: emailResult.sent ? "email" : "console",
     ...(isDev && emailConsoleFallback ? { otp, devMode: true } : {}),
@@ -1994,7 +1976,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
     const userRolesEmail = (user.roles || "customer").split(",").map((r: string) => r.trim());
     if (!userRolesEmail.includes(requestedEmailRole)) {
       addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: user.id, details: `User with roles [${user.roles}] tried email OTP login as ${requestedEmailRole}`, severity: "high" });
-      res.status(403).json({ error: "This account is not registered as a " + requestedEmailRole + ". Please use the correct app.", wrongApp: true }); return;
+      sendErrorWithData(res, "This account is not registered as a " + requestedEmailRole + ". Please use the correct app.", { wrongApp: true }, 403); return;
     }
   }
 
@@ -2026,14 +2008,14 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
     if (updated.lockedUntil) {
       sendTooManyRequests(res, `Too many failed attempts. Locked for ${lockoutMinutes} minutes.`);
     } else {
-      res.status(401).json({ error: `Invalid OTP. ${remaining} attempt(s) remaining.`, attemptsRemaining: remaining });
+      sendErrorWithData(res, `Invalid OTP. ${remaining} attempt(s) remaining.`, { attemptsRemaining: remaining }, 401);
     }
     return;
   }
 
   /* Check approval BEFORE touching the DB — a rejected user must not have their OTP cleared */
   if (user.approvalStatus === "rejected") {
-    res.status(403).json({ error: "Account rejected. Contact admin.", code: "APPROVAL_REJECTED", approvalStatus: "rejected", rejectionReason: user.approvalNote ?? null }); return;
+    sendErrorWithData(res, "Account rejected. Contact admin.", { code: "APPROVAL_REJECTED", approvalStatus: "rejected", rejectionReason: user.approvalNote ?? null }, 403); return;
   }
 
   /* Clear email OTP + mark email verified + update last login */
@@ -2051,7 +2033,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
     const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
     if (!isDeviceTrusted(user, deviceFingerprint, trustedDays)) {
       const tempToken = sign2faChallengeToken(user.id, user.phone ?? "", user.roles ?? "customer", user.roles ?? "customer", "email_otp");
-      res.json({ requires2FA: true, tempToken, userId: user.id }); return;
+      sendSuccess(res, { requires2FA: true, tempToken, userId: user.id }); return;
     }
   }
 
@@ -2062,7 +2044,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
   const expiresAt   = new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString();
 
   if (isPendingApproval) {
-    res.json({
+    sendSuccess(res, {
       token: accessToken, expiresAt, pendingApproval: true,
       message: "Aapka account admin approval ke liye bheja gaya hai.",
       user: { id: user.id, phone: decryptPii(user.encryptedPhone, user.phone), name: user.name, role: user.roles, roles: user.roles, approvalStatus: "pending" },
@@ -2085,7 +2067,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
   const emailUserRoles = (user.roles || "customer").split(",").map((r: string) => r.trim());
   if (isEmailCustomerAppCtx && !emailUserRoles.includes("customer")) {
     addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: user.id, details: `User with roles [${user.roles}] email-logged in to customer app context — offering add-role`, severity: "low" });
-    res.json({
+    sendSuccess(res, {
       token: accessToken, refreshToken: refreshRaw, expiresAt, sessionDays: getRefreshTokenTtlDays(),
       canAddCustomerRole: true, code: "cross_app_account", wrongApp: true,
       user: { id: user.id, phone: decryptPii(user.encryptedPhone, user.phone), name: user.name, email: decryptPii(user.encryptedEmail, user.email), username: user.username, role: user.roles, roles: user.roles ?? "customer", avatar: user.avatar, walletBalance: parseFloat(user.walletBalance ?? "0"), emailVerified: true, phoneVerified: user.phoneVerified ?? false },
@@ -2093,7 +2075,7 @@ router.post("/verify-email-otp", verifyCaptcha, async (req, res) => {
     return;
   }
 
-  res.json({
+  sendSuccess(res, {
     token:        accessToken,
     refreshToken: refreshRaw,
     expiresAt,
@@ -2139,7 +2121,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
   const parsed = loginSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
     const first = parsed.error.issues[0];
-    res.status(400).json({ error: first?.message ?? "Invalid request body", field: first?.path?.[0] ?? undefined });
+    sendErrorWithData(res, first?.message ?? "Invalid request body", { field: first?.path?.[0] ?? undefined }, 400);
     return;
   }
   const identifier = (parsed.data.identifier || parsed.data.username || "").trim();
@@ -2186,7 +2168,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
     const userRolesLogin = (user.roles || "customer").split(",").map((r: string) => r.trim());
     if (!userRolesLogin.includes(requestedRoleLogin)) {
       addSecurityEvent({ type: "cross_role_login_attempt", ip, userId: user.id, details: `User with roles [${user.roles}] tried to log in as ${requestedRoleLogin}`, severity: "high" });
-      res.status(403).json({ error: "This account is not registered as a " + requestedRoleLogin + ". Please use the correct app.", wrongApp: true }); return;
+      sendErrorWithData(res, "This account is not registered as a " + requestedRoleLogin + ". Please use the correct app.", { wrongApp: true }, 403); return;
     }
   }
 
@@ -2210,7 +2192,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
   }
 
   if (user.approvalStatus === "rejected") {
-    res.status(403).json({ error: "Account rejected. Contact admin.", code: "APPROVAL_REJECTED", approvalStatus: "rejected", rejectionReason: user.approvalNote ?? null }); return;
+    sendErrorWithData(res, "Account rejected. Contact admin.", { code: "APPROVAL_REJECTED", approvalStatus: "rejected", rejectionReason: user.approvalNote ?? null }, 403); return;
   }
 
   await resetAttempts(lockoutKey);
@@ -2241,7 +2223,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
     }
     writeAuthAuditLog("otp_sent", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { method: "password_login", channel: "console" } });
     const tempToken = sign2faChallengeToken(user.id, user.phone ?? user.email ?? "", user.roles ?? "customer", user.roles ?? "customer", "password_otp");
-    res.json({ requiresOtp: true, tempToken, userId: user.id, message: "OTP sent — check server console" });
+    sendSuccess(res, { requiresOtp: true, tempToken, userId: user.id, message: "OTP sent — check server console" });
     return;
   }
 
@@ -2258,7 +2240,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
     const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
     if (!isDeviceTrusted(user, deviceFingerprint, trustedDays)) {
       const tempToken = sign2faChallengeToken(user.id, user.phone ?? "", user.roles ?? "customer", user.roles ?? "customer", "password");
-      res.json({ requires2FA: true, tempToken, userId: user.id }); return;
+      sendSuccess(res, { requires2FA: true, tempToken, userId: user.id }); return;
     }
   }
 
@@ -2266,7 +2248,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
   const expiresAt   = new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString();
 
   if (isPendingApproval) {
-    res.json({
+    sendSuccess(res, {
       token: accessToken, expiresAt, pendingApproval: true,
       message: "Aapka account admin approval ke liye bheja gaya hai.",
       user: { id: user.id, phone: decryptPii(user.encryptedPhone, user.phone), name: user.name, role: user.roles, roles: user.roles, approvalStatus: "pending" },
@@ -2284,7 +2266,7 @@ async function handleUnifiedLogin(req: Request, res: any) {
 
   writeAuthAuditLog("login_success", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { method: `password_${idType}`, identifier: lookupKey } });
 
-  res.json({
+  sendSuccess(res, {
     token:        accessToken,
     refreshToken: refreshRaw,
     expiresAt,
@@ -2354,7 +2336,7 @@ router.post("/login/verify-otp", async (req, res) => {
       sendTooManyRequests(res, `Too many failed attempts. Account locked for ${lockoutMinutes} minutes.`);
     } else if (lockoutEnabled) {
       const remaining = Math.max(0, maxAttempts - updated.attempts);
-      res.status(401).json({ error: `Invalid or expired OTP. ${remaining} attempt(s) remaining.`, attemptsRemaining: remaining });
+      sendErrorWithData(res, `Invalid or expired OTP. ${remaining} attempt(s) remaining.`, { attemptsRemaining: remaining }, 401);
     } else {
       sendUnauthorized(res, "Invalid or expired OTP.");
     }
@@ -2369,7 +2351,7 @@ router.post("/login/verify-otp", async (req, res) => {
     const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
     if (!isDeviceTrusted(user, deviceFingerprint, trustedDays)) {
       const totpToken = sign2faChallengeToken(user.id, user.phone ?? "", user.roles ?? "customer", user.roles ?? "customer", "password");
-      res.json({ requires2FA: true, tempToken: totpToken, userId: user.id }); return;
+      sendSuccess(res, { requires2FA: true, tempToken: totpToken, userId: user.id }); return;
     }
   }
 
@@ -2386,7 +2368,7 @@ router.post("/login/verify-otp", async (req, res) => {
 
   writeAuthAuditLog("login_success", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined, metadata: { method: "password_otp_verified" } });
 
-  res.json({
+  sendSuccess(res, {
     token: accessToken,
     refreshToken: refreshRaw,
     expiresAt,
@@ -2483,7 +2465,7 @@ router.post("/complete-profile", async (req, res) => {
       }
     }
     const check = validatePasswordStrength(password);
-    if (!check.ok) { res.status(400).json({ error: check.message }); return; }
+    if (!check.ok) { sendError(res, check.message, 400); return; }
     updates.passwordHash = hashPassword(password);
   }
 
@@ -2547,7 +2529,7 @@ router.post("/complete-profile", async (req, res) => {
   setRiderRefreshCookie(req, res, refreshRaw, updated);
   setVendorRefreshCookie(req, res, refreshRaw, updated);
 
-  res.json({
+  sendSuccess(res, {
     success: true,
     message: "Profile update ho gaya",
     token: accessToken,
@@ -2590,7 +2572,7 @@ router.post("/set-password", async (req, res) => {
   }
 
   const check = validatePasswordStrength(password);
-  if (!check.ok) { res.status(400).json({ error: check.message }); return; }
+  if (!check.ok) { sendError(res, check.message, 400); return; }
 
   /* Bump tokenVersion to invalidate all outstanding JWTs on password change;
      also clear requirePasswordChange now that the user has set their own password. */
@@ -2601,7 +2583,7 @@ router.post("/set-password", async (req, res) => {
     updatedAt: new Date(),
   }).where(eq(usersTable.id, userId));
   writeAuthAuditLog("password_changed", { userId, ip: getClientIp(req), userAgent: req.headers["user-agent"] ?? undefined });
-  res.json({ success: true, message: "Password set ho gaya", requirePasswordChange: false });
+  sendSuccess(res, { success: true, message: "Password set ho gaya", requirePasswordChange: false });
 });
 
 /* isAuthMethodEnabled is now exported from @workspace/auth-utils/server
@@ -2721,7 +2703,7 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
   }
   const pwCheck = validatePasswordStrength(password);
   if (!pwCheck.ok) {
-    res.status(400).json({ error: pwCheck.message });
+    sendError(res, pwCheck.message, 400);
     return;
   }
 
@@ -2751,7 +2733,7 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
       const friendly = existingReg.phoneVerified
         ? "An account with this phone number already exists. Please log in instead."
         : "An account with this phone number is already pending approval. Please log in to check your status.";
-      res.status(409).json({ error: friendly, existingAccount: true });
+      sendErrorWithData(res, friendly, { existingAccount: true }, 409);
       return;
     }
     /* Stale unverified pending record — soft-delete and allow fresh registration */
@@ -2875,7 +2857,7 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
       });
       setRiderRefreshCookie(req, res, refreshRaw, { roles: userRole });
       setVendorRefreshCookie(req, res, refreshRaw, { roles: userRole });
-      res.status(201).json({
+      sendSuccess(res, {
         message: "Registration successful.",
         userId, role: userRole,
         pendingApproval: false,
@@ -2884,16 +2866,16 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
         token: accessToken,
         refreshToken: refreshRaw,
         expiresAt: new Date(Date.now() + getAccessTokenTtlSec() * 1000).toISOString(),
-      });
+      }, undefined, 201);
     } else {
       /* Needs approval — no token yet, flag as pending */
-      res.status(201).json({
+      sendSuccess(res, {
         message: "Registration submitted. Your account is pending admin approval.",
         userId, role: userRole,
         pendingApproval: true,
         otpRequired: false,
         channel: "bypass",
-      });
+      }, undefined, 201);
     }
     return;
   }
@@ -2907,14 +2889,14 @@ router.post("/register", verifyCaptcha, sharedValidateBody(registerSchema), asyn
   }
 
   const isDev = process.env.NODE_ENV !== "production";
-  res.status(201).json({
+  sendSuccess(res, {
     message: "Registration successful. Please verify your phone with the OTP sent.",
     userId,
 
     pendingApproval: needsApproval,
     otpRequired: true,
     channel: smsResult.sent ? smsResult.provider : "console",
-  });
+  }, undefined, 201);
 });
 
 router.post("/forgot-password", verifyCaptcha, sharedValidateBody(forgotPasswordSchema), async (req, res) => {
@@ -2966,7 +2948,7 @@ router.post("/forgot-password", verifyCaptcha, sharedValidateBody(forgotPassword
 
   const isDev = process.env.NODE_ENV !== "production";
   if (!user) {
-    res.json({ message: "If an account exists, a reset code has been sent.", ...(isDev ? { hint: "No account found" } : {}) });
+    sendSuccess(res, { message: "If an account exists, a reset code has been sent.", ...(isDev ? { hint: "No account found" } : {}) });
     return;
   }
 
@@ -3017,7 +2999,7 @@ router.post("/forgot-password", verifyCaptcha, sharedValidateBody(forgotPassword
 
   writeAuthAuditLog("forgot_password", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined });
 
-  res.json({
+  sendSuccess(res, {
     message: "If an account exists, a reset code has been sent.",
   });
 });
@@ -3053,7 +3035,7 @@ router.post("/verify-reset-otp", verifyCaptcha, async (req, res) => {
   }
 
   if (!user) {
-    res.status(422).json({ error: "Invalid or expired code" });
+    sendError(res, "Invalid or expired code", 422);
     return;
   }
 
@@ -3062,30 +3044,30 @@ router.post("/verify-reset-otp", verifyCaptcha, async (req, res) => {
 
   if (phone) {
     if (!user.otpCode || user.otpCode !== hashed) {
-      res.status(422).json({ error: "Invalid verification code" });
+      sendError(res, "Invalid verification code", 422);
       return;
     }
     if (!user.otpExpiry || user.otpExpiry < now) {
-      res.status(422).json({ error: "Verification code has expired. Please request a new one." });
+      sendError(res, "Verification code has expired. Please request a new one.", 422);
       return;
     }
     if (user.otpUsed) {
-      res.status(422).json({ error: "This code has already been used. Please request a new one." });
+      sendError(res, "This code has already been used. Please request a new one.", 422);
       return;
     }
   } else {
     if (!user.emailOtpCode || user.emailOtpCode !== hashed) {
-      res.status(422).json({ error: "Invalid verification code" });
+      sendError(res, "Invalid verification code", 422);
       return;
     }
     if (!user.emailOtpExpiry || user.emailOtpExpiry < now) {
-      res.status(422).json({ error: "Verification code has expired. Please request a new one." });
+      sendError(res, "Verification code has expired. Please request a new one.", 422);
       return;
     }
   }
 
   writeAuthAuditLog("verify_reset_otp", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined });
-  res.json({ valid: true });
+  sendSuccess(res, { valid: true });
 });
 
 router.post("/reset-password", verifyCaptcha, async (req, res) => {
@@ -3126,7 +3108,7 @@ router.post("/reset-password", verifyCaptcha, async (req, res) => {
 
   const pwCheck = validatePasswordStrength(newPassword);
   if (!pwCheck.ok) {
-    res.status(400).json({ error: pwCheck.message });
+    sendError(res, pwCheck.message, 400);
     return;
   }
 
@@ -3184,7 +3166,7 @@ router.post("/reset-password", verifyCaptcha, async (req, res) => {
 
   if (user.totpEnabled && isAuthMethodEnabled(settings, "auth_2fa_enabled", userRole)) {
     if (!totpCode) {
-      res.status(400).json({ error: "Two-factor authentication code required", requires2FA: true });
+      sendErrorWithData(res, "Two-factor authentication code required", { requires2FA: true }, 400);
       return;
     }
     if (!/^\d{6}$/.test(totpCode)) {
@@ -3221,7 +3203,7 @@ router.post("/reset-password", verifyCaptcha, async (req, res) => {
 
   writeAuthAuditLog("password_reset", { userId: user.id, ip, userAgent: req.headers["user-agent"] ?? undefined });
 
-  res.json({ success: true, message: "Password has been reset successfully. Please login with your new password." });
+  sendSuccess(res, undefined, "Password has been reset successfully. Please login with your new password.");
 });
 
 router.post("/email-register", verifyCaptcha, async (req, res) => {
@@ -3252,7 +3234,7 @@ router.post("/email-register", verifyCaptcha, async (req, res) => {
 
   const pwCheck = validatePasswordStrength(password);
   if (!pwCheck.ok) {
-    res.status(400).json({ error: pwCheck.message });
+    sendError(res, pwCheck.message, 400);
     return;
   }
 
@@ -3338,17 +3320,15 @@ router.post("/email-register", verifyCaptcha, async (req, res) => {
     logger.info({ email: normalizedEmail, emailSent: emailResult.sent }, "Email verification token generated");
   }
 
-  res.status(201).json({
-    message: emailResult.sent
-      ? "Registration successful. Please check your email to verify your account."
-      : "Registration successful. Please check your email to verify your account. (Email delivery pending — contact support if not received.)",
+  sendCreated(res, {
     userId,
-
     pendingApproval: requireApproval,
     emailSent: emailResult.sent,
     verificationLink: isDevTokenLog ? verificationLink : undefined,
     ...(isDevTokenLog ? { verificationToken: rawToken } : {}),
-  });
+  }, emailResult.sent
+    ? "Registration successful. Please check your email to verify your account."
+    : "Registration successful. Please check your email to verify your account. (Email delivery pending — contact support if not received.)");
 });
 
 router.get("/verify-email", async (req, res) => {
@@ -3378,7 +3358,7 @@ router.get("/verify-email", async (req, res) => {
   }
 
   if (user.emailVerified) {
-    res.json({ message: "Email already verified. You can log in." });
+    sendSuccess(res, undefined, "Email already verified. You can log in.");
     return;
   }
 
@@ -3405,7 +3385,7 @@ router.get("/verify-email", async (req, res) => {
   await resetAttempts(verifyKey);
   writeAuthAuditLog("email_verified", { userId: user.id, ip });
 
-  res.json({ message: "Email verified successfully. You can now log in." });
+  sendSuccess(res, undefined, "Email verified successfully. You can now log in.");
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -3583,11 +3563,11 @@ router.post("/social/google", async (req, res) => {
       const userRoles = (user.roles || "").split(",").map((r: string) => r.trim());
       if (!userRoles.includes(requestedSocialRole)) {
         addSecurityEvent({ type: "cross_role_social_login_attempt", ip, details: `Social Google cross-role: requested=${requestedSocialRole} user.roles=${user.roles}`, severity: "medium" });
-        res.status(403).json({ error: `No ${requestedSocialRole} account found for this Google account. Please use the correct app.`, wrongApp: true }); return;
+        sendErrorWithData(res, `No ${requestedSocialRole} account found for this Google account. Please use the correct app.`, { wrongApp: true }, 403); return;
       }
     } else {
       /* No user found — cannot auto-create non-customer accounts via social auth */
-      res.status(403).json({ error: `No ${requestedSocialRole} account found for this Google account. Please use the correct registration process or contact admin.`, wrongApp: true }); return;
+      sendErrorWithData(res, `No ${requestedSocialRole} account found for this Google account. Please use the correct registration process or contact admin.`, { wrongApp: true }, 403); return;
     }
   }
 
@@ -3618,13 +3598,13 @@ router.post("/social/google", async (req, res) => {
     const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
     if (!isDeviceTrusted(user!, deviceFingerprint, trustedDays)) {
       const tempToken = sign2faChallengeToken(user!.id, user!.phone ?? "", user!.roles ?? "customer", user!.roles ?? "customer", "social_google");
-      res.json({ requires2FA: true, tempToken, userId: user!.id }); return;
+      sendSuccess(res, { requires2FA: true, tempToken, userId: user!.id }); return;
     }
   }
 
   addAuditEntry({ action: "social_google_login", ip, details: `Google login: ${email ?? googleId}`, result: "success" });
   const result = await issueTokensForUser(user!, ip, "social_google", req.headers["user-agent"] as string, req, res);
-  res.json({ ...result, isNewUser, needsProfileCompletion: isNewUser || !user!.cnic || !user!.name });
+  sendSuccess(res, { ...result, isNewUser, needsProfileCompletion: isNewUser || !user!.cnic || !user!.name });
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -3681,11 +3661,11 @@ router.post("/social/facebook", async (req, res) => {
       const userRoles = (user.roles || "").split(",").map((r: string) => r.trim());
       if (!userRoles.includes(requestedFbSocialRole)) {
         addSecurityEvent({ type: "cross_role_social_login_attempt", ip, details: `Social Facebook cross-role: requested=${requestedFbSocialRole} user.roles=${user.roles}`, severity: "medium" });
-        res.status(403).json({ error: `No ${requestedFbSocialRole} account found for this Facebook account. Please use the correct app.`, wrongApp: true }); return;
+        sendErrorWithData(res, `No ${requestedFbSocialRole} account found for this Facebook account. Please use the correct app.`, { wrongApp: true }, 403); return;
       }
     } else {
       /* No user found — cannot auto-create non-customer accounts via social auth */
-      res.status(403).json({ error: `No ${requestedFbSocialRole} account found for this Facebook account. Please use the correct registration process or contact admin.`, wrongApp: true }); return;
+      sendErrorWithData(res, `No ${requestedFbSocialRole} account found for this Facebook account. Please use the correct registration process or contact admin.`, { wrongApp: true }, 403); return;
     }
   }
 
@@ -3716,13 +3696,13 @@ router.post("/social/facebook", async (req, res) => {
     const trustedDays = parseInt(settings["auth_trusted_device_days"] ?? "30", 10);
     if (!isDeviceTrusted(user!, deviceFingerprint, trustedDays)) {
       const tempToken = sign2faChallengeToken(user!.id, user!.phone ?? "", user!.roles ?? "customer", user!.roles ?? "customer", "social_facebook");
-      res.json({ requires2FA: true, tempToken, userId: user!.id }); return;
+      sendSuccess(res, { requires2FA: true, tempToken, userId: user!.id }); return;
     }
   }
 
   addAuditEntry({ action: "social_facebook_login", ip, details: `Facebook login: ${email ?? facebookId}`, result: "success" });
   const result = await issueTokensForUser(user!, ip, "social_facebook", req.headers["user-agent"] as string, req, res);
-  res.json({ ...result, isNewUser, needsProfileCompletion: isNewUser || !user!.cnic || !user!.name });
+  sendSuccess(res, { ...result, isNewUser, needsProfileCompletion: isNewUser || !user!.cnic || !user!.name });
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -3757,7 +3737,7 @@ router.get("/2fa/setup", async (req, res) => {
   let qrDataUrl: string | null = null;
   try { qrDataUrl = await generateQRCodeDataURL(secret, label); } catch (err) { logger.error("[2fa/setup] QR code generation failed:", err); }
 
-  res.json({ secret, uri, qrDataUrl });
+  sendSuccess(res, { secret, uri, qrDataUrl });
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -3822,7 +3802,7 @@ router.post("/2fa/verify-setup", async (req, res) => {
   writeAuthAuditLog("2fa_enabled", { userId: auth.userId, ip, userAgent: req.headers["user-agent"] as string });
   addAuditEntry({ action: "2fa_enabled", ip, details: `2FA enabled for user ${auth.userId}`, result: "success" });
 
-  res.json({ success: true, backupCodes, message: "2FA activated. Save your backup codes securely — they cannot be shown again." });
+  sendSuccess(res, { success: true, backupCodes, message: "2FA activated. Save your backup codes securely — they cannot be shown again." });
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -3897,7 +3877,7 @@ router.post("/totp/enable", async (req, res) => {
   writeAuthAuditLog("2fa_enabled", { userId: auth.userId, ip, userAgent: req.headers["user-agent"] as string });
   addAuditEntry({ action: "2fa_enabled", ip, details: `2FA enabled for user ${auth.userId} via /auth/totp/enable`, result: "success" });
 
-  res.json({ success: true, backupCodes, message: "2FA activated. Save your backup codes securely — they cannot be shown again." });
+  sendSuccess(res, { success: true, backupCodes, message: "2FA activated. Save your backup codes securely — they cannot be shown again." });
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -3933,7 +3913,7 @@ router.post("/2fa/verify", async (req, res) => {
   writeAuthAuditLog("2fa_verified", { userId: user.id, ip, userAgent: req.headers["user-agent"] as string });
   const originalMethod = challengePayload.authMethod ?? "phone_otp";
   const result = await issueTokensForUser(user, ip, originalMethod, req.headers["user-agent"] as string, req, res);
-  res.json(result);
+  sendSuccess(res, result);
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -3971,7 +3951,7 @@ router.post("/2fa/disable", async (req, res) => {
   writeAuthAuditLog("2fa_disabled", { userId: auth.userId, ip, userAgent: req.headers["user-agent"] as string });
   addAuditEntry({ action: "2fa_disabled", ip, details: `2FA disabled by user ${auth.userId}`, result: "success" });
 
-  res.json({ success: true, message: "Two-factor authentication has been disabled" });
+  sendSuccess(res, undefined, "Two-factor authentication has been disabled");
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -4082,11 +4062,11 @@ router.post("/2fa/recovery", async (req, res) => {
   if (!user.totpEnabled) { sendError(res, "2FA is not enabled", 400); return; }
 
   const outcome = await consumeRecoveryCode(user, backupCode, ip, "/auth/2fa/recovery");
-  if ("error" in outcome) { res.status(outcome.status).json({ error: outcome.error }); return; }
+  if ("error" in outcome) { sendError(res, outcome.error, outcome.status); return; }
 
   const recoveryOrigMethod = challengePayload.authMethod ?? "phone_otp";
   const result = await issueTokensForUser(user, ip, recoveryOrigMethod, req.headers["user-agent"] as string, req, res);
-  res.json({ ...result, codesRemaining: outcome.codesRemaining });
+  sendSuccess(res, { ...result, codesRemaining: outcome.codesRemaining });
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -4123,11 +4103,11 @@ router.post("/totp/recover", async (req, res) => {
   if (!user.totpEnabled) { sendError(res, "2FA is not enabled", 400); return; }
 
   const outcome = await consumeRecoveryCode(user, backupCode, ip, "/auth/totp/recover");
-  if ("error" in outcome) { res.status(outcome.status).json({ error: outcome.error }); return; }
+  if ("error" in outcome) { sendError(res, outcome.error, outcome.status); return; }
 
   const recoveryOrigMethod = challengePayload.authMethod ?? "phone_otp";
   const result = await issueTokensForUser(user, ip, recoveryOrigMethod, req.headers["user-agent"] as string, req, res);
-  res.json({ ...result, codesRemaining: outcome.codesRemaining });
+  sendSuccess(res, { ...result, codesRemaining: outcome.codesRemaining });
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -4170,7 +4150,7 @@ router.post("/2fa/trust-device", async (req, res) => {
   const ip = getClientIp(req);
   writeAuthAuditLog("device_trusted", { userId: auth.userId, ip, userAgent: req.headers["user-agent"] as string });
 
-  res.json({ success: true, message: `Device trusted for ${trustedDays} days`, trustedDevices: devices.length });
+  sendSuccess(res, { success: true, message: `Device trusted for ${trustedDays} days`, trustedDevices: devices.length });
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -4209,7 +4189,7 @@ router.post("/magic-link/send", async (req, res) => {
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.email, normalized)).limit(1);
   if (!user) {
-    res.json({ message: "If an account exists with this email, a magic link has been sent." }); return;
+    sendSuccess(res, undefined, "If an account exists with this email, a magic link has been sent."); return;
   }
 
   const effectiveMagicRole = user.roles ?? ((req.body?.role === "rider" || req.body?.role === "vendor") ? req.body.role : "customer");
@@ -4238,7 +4218,7 @@ router.post("/magic-link/send", async (req, res) => {
   writeAuthAuditLog("magic_link_sent", { ip, metadata: { email: normalized } });
 
   const isDevTokenLog = process.env.NODE_ENV === "development" && process.env["LOG_OTP"] === "1";
-  res.json({
+  sendSuccess(res, {
     message: "If an account exists with this email, a magic link has been sent.",
     ...(isDevTokenLog ? { token: rawToken } : {}),
   });
@@ -4290,7 +4270,7 @@ router.post("/magic-link/verify", async (req, res) => {
     if (!isDeviceTrusted(user, deviceFingerprint ?? "", trustedDays)) {
       if (!totpCode) {
         const tempToken = sign2faChallengeToken(user.id, user.phone ?? "", user.roles ?? "customer", user.roles ?? "customer", "magic_link");
-        res.json({ requires2FA: true, tempToken, userId: user.id }); return;
+        sendSuccess(res, { requires2FA: true, tempToken, userId: user.id }); return;
       }
       const secret = decryptTotpSecret(user.totpSecret!);
       if (!verifyTotpToken(totpCode, secret)) {
@@ -4303,7 +4283,7 @@ router.post("/magic-link/verify", async (req, res) => {
 
   addAuditEntry({ action: "magic_link_login", ip, details: `Magic link login: ${user.email ?? matchedRow.userId}`, result: "success" });
   const result = await issueTokensForUser(user, ip, "magic_link", req.headers["user-agent"] as string, req, res);
-  res.json(result);
+  sendSuccess(res, result);
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -4355,7 +4335,7 @@ router.post("/change-phone/request", async (req, res) => {
 
   writeAuthAuditLog("phone_change_requested", { userId: auth.userId, ip, userAgent: req.headers["user-agent"] as string, metadata: { newPhone: phone } });
 
-  res.json({ success: true, message: "OTP sent to new phone number" });
+  sendSuccess(res, undefined, "OTP sent to new phone number");
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -4402,7 +4382,7 @@ router.post("/change-phone/confirm", async (req, res) => {
 
   writeAuthAuditLog("phone_changed", { userId: auth.userId, ip, userAgent: req.headers["user-agent"] as string, metadata: { newPhone: phone } });
 
-  res.json({ success: true, message: "Phone number updated successfully", phone });
+  sendSuccess(res, { success: true, message: "Phone number updated successfully", phone });
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -4418,7 +4398,7 @@ router.get("/login-history", async (req, res) => {
     .orderBy(desc(loginHistoryTable.createdAt))
     .limit(20);
 
-  res.json({
+  sendSuccess(res, {
     history: history.map(h => ({
       id: h.id,
       ip: h.ip,
@@ -4447,7 +4427,7 @@ router.get("/sessions", async (req, res) => {
     .where(and(eq(userSessionsTable.userId, auth.userId), sql`revoked_at IS NULL`))
     .orderBy(desc(userSessionsTable.lastActiveAt));
 
-  res.json({
+  sendSuccess(res, {
     sessions: sessions.map(s => ({
       id: s.id,
       deviceName: s.deviceName,
@@ -4492,7 +4472,7 @@ router.delete("/sessions/:id", async (req, res) => {
   }
 
   writeAuthAuditLog("session_revoked", { userId: auth.userId, ip: getClientIp(req), metadata: { sessionId: id } });
-  res.json({ success: true, message: "Session revoked" });
+  sendSuccess(res, undefined, "Session revoked");
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -4516,7 +4496,7 @@ router.delete("/sessions", async (req, res) => {
     .where(eq(usersTable.id, auth.userId));
 
   writeAuthAuditLog("all_sessions_revoked", { userId: auth.userId, ip: getClientIp(req) });
-  res.json({ success: true, message: "All sessions revoked" });
+  sendSuccess(res, undefined, "All sessions revoked");
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -4561,9 +4541,9 @@ router.post("/link-google", async (req, res) => {
     await db.update(usersTable).set(updates).where(eq(usersTable.id, auth.userId));
 
     addAuditEntry({ action: "google_account_linked", ip, details: `Google account linked: ${email ?? googleId}`, result: "success" });
-    res.json({ success: true, message: "Google account linked successfully" });
+    sendSuccess(res, undefined, "Google account linked successfully");
   } catch (err: any) {
-    res.status(400).json({ error: "Invalid Google token", detail: err.message });
+    sendErrorWithData(res, "Invalid Google token", { detail: err.message }, 400);
   }
 });
 
@@ -4609,9 +4589,9 @@ router.post("/link-facebook", async (req, res) => {
     await db.update(usersTable).set(updates).where(eq(usersTable.id, auth.userId));
 
     addAuditEntry({ action: "facebook_account_linked", ip, details: `Facebook account linked: ${facebookId}`, result: "success" });
-    res.json({ success: true, message: "Facebook account linked successfully" });
+    sendSuccess(res, undefined, "Facebook account linked successfully");
   } catch (err: any) {
-    res.status(400).json({ error: "Failed to link Facebook account", detail: err.message });
+    sendErrorWithData(res, "Failed to link Facebook account", { detail: err.message }, 400);
   }
 });
 
@@ -4686,7 +4666,7 @@ router.post("/firebase-verify", async (req, res) => {
   }
 
   if (!user.isActive || user.isBanned) {
-    res.status(403).json({ error: "Account suspended", reason: user.banReason ?? "Contact support" });
+    sendErrorWithData(res, "Account suspended", { reason: user.banReason ?? "Contact support" }, 403);
     return;
   }
 
@@ -4700,7 +4680,7 @@ router.post("/firebase-verify", async (req, res) => {
   writeAuthAuditLog("firebase_login", { userId: user.id, ip, userAgent, metadata: { uid: decoded.uid } });
 
   const { passwordHash: _ph, otpCode: _otp, otpExpiry: _exp, emailOtpCode: _eotp, emailOtpExpiry: _eexp, totpSecret: _ts, backupCodes: _bc, ...safeUser } = user;
-  res.json({ ...tokenData, user: safeUser });
+  sendSuccess(res, { ...tokenData, user: safeUser });
 });
 
 export default router;

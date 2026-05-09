@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.js";
 /**
  * SMS Service — supports Twilio, MSG91, and console (dev) modes.
  * Provider is selected via the `sms_provider` platform setting.
@@ -37,7 +38,7 @@ async function dispatchSMS(phone: string, message: string, settings: Record<stri
   const provider      = settings["sms_provider"] ?? "console";
 
   if (!integrationOn || provider === "console") {
-    console.log(`[SMS:console] To: ${phone} | ${message}`);
+    logger.info(`[SMS:console] To: ${phone} | ${message}`);
     return { sent: true, provider: "console" };
   }
 
@@ -50,7 +51,7 @@ async function dispatchSMS(phone: string, message: string, settings: Record<stri
     const from       = settings["sms_sender_id"]?.trim();
 
     if (!accountSid || !authToken || !from) {
-      console.log(`[SMS:twilio] Credentials not configured — logging: ${message}`);
+      logger.info(`[SMS:twilio] Credentials not configured — logging: ${message}`);
       return { sent: false, provider: "twilio", error: "Twilio credentials not configured. Set sms_account_sid, sms_api_key, sms_sender_id in Integrations." };
     }
 
@@ -58,10 +59,10 @@ async function dispatchSMS(phone: string, message: string, settings: Record<stri
       const { default: twilio } = await import("twilio");
       const client = twilio(accountSid, authToken);
       await client.messages.create({ body: message, from, to: e164 });
-      console.log(`[SMS:twilio] Sent to ${e164}`);
+      logger.info(`[SMS:twilio] Sent to ${e164}`);
       return { sent: true, provider: "twilio" };
     } catch (err: any) {
-      console.error(`[SMS:twilio] Error:`, err.message);
+      logger.error(`[SMS:twilio] Error:`, err.message);
       return { sent: false, provider: "twilio", error: err.message };
     }
   }
@@ -72,7 +73,7 @@ async function dispatchSMS(phone: string, message: string, settings: Record<stri
     const senderId   = (settings["sms_sender_id"] ?? "AJKMAT").trim();
 
     if (!authKey) {
-      console.log(`[SMS:msg91] Auth key not configured — logging: ${message}`);
+      logger.info(`[SMS:msg91] Auth key not configured — logging: ${message}`);
       return { sent: false, provider: "msg91", error: "MSG91 auth key not configured. Set sms_msg91_key in Integrations." };
     }
 
@@ -84,7 +85,7 @@ async function dispatchSMS(phone: string, message: string, settings: Record<stri
       }
       return { sent: false, provider: "msg91", error: body };
     } catch (err: any) {
-      console.error(`[SMS:msg91] Error:`, err.message);
+      logger.error(`[SMS:msg91] Error:`, err.message);
       return { sent: false, provider: "msg91", error: err.message };
     }
   }
@@ -95,7 +96,7 @@ async function dispatchSMS(phone: string, message: string, settings: Record<stri
     const senderId = (settings["sms_sender_id"] ?? "AJKMart").trim();
 
     if (!apiKey) {
-      console.log(`[SMS:zong] API key not configured — logging: ${message}`);
+      logger.info(`[SMS:zong] API key not configured — logging: ${message}`);
       return { sent: false, provider: "zong", error: "Zong API key not configured. Set sms_api_key in Integrations." };
     }
 
@@ -119,18 +120,18 @@ async function dispatchSMS(phone: string, message: string, settings: Record<stri
       });
 
       if (resp.ok || resp.status === 202) {
-        console.log(`[SMS:zong] Sent to ${e164}`);
+        logger.info(`[SMS:zong] Sent to ${e164}`);
         return { sent: true, provider: "zong" };
       }
       const errText = await resp.text().catch(() => `HTTP ${resp.status}`);
       return { sent: false, provider: "zong", error: errText };
     } catch (err: any) {
-      console.error(`[SMS:zong] Error:`, err.message);
+      logger.error(`[SMS:zong] Error:`, err.message);
       return { sent: false, provider: "zong", error: err.message };
     }
   }
 
-  console.log(`[SMS:unknown] Unknown provider "${provider}" — logging: ${message}`);
+  logger.info(`[SMS:unknown] Unknown provider "${provider}" — logging: ${message}`);
   return { sent: false, provider, error: `Unknown provider: ${provider}` };
 }
 

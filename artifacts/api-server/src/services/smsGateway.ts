@@ -107,7 +107,7 @@ async function tryZong(phone: string, message: string, gw: any): Promise<SMSResu
 }
 
 function consoleResult(phone: string, message: string): SMSResult {
-  console.log(`[SMS:console] To: ${phone} | ${message}`);
+  logger.info(`[SMS:console] To: ${phone} | ${message}`);
   return { sent: true, provider: "console" };
 }
 

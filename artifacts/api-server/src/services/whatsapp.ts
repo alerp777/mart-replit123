@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.js";
 /**
  * WhatsApp Business API service — Meta Cloud API (Graph API v19+).
  * Uses approved message templates for OTP and order notifications.
@@ -123,9 +124,9 @@ export async function sendWhatsAppOTP(
   );
 
   if (result.sent) {
-    console.log(`[WhatsApp] OTP sent to ${to}, lang: ${langCode}, messageId: ${result.messageId}`);
+    logger.info(`[WhatsApp] OTP sent to ${to}, lang: ${langCode}, messageId: ${result.messageId}`);
   } else {
-    console.error(`[WhatsApp] Failed to send OTP:`, result.error);
+    logger.error(`[WhatsApp] Failed to send OTP:`, result.error);
   }
 
   return result;
@@ -250,6 +251,6 @@ export async function sendWhatsAppOrderNotification(
 export async function sendWhatsappMessage(
   input: { to: string; message: string; templateId?: string }
 ): Promise<{ messageId?: string } & WAResult> {
-  console.log(`[WhatsApp:generic] To: ${input.to} | ${input.message}`);
+  logger.info(`[WhatsApp:generic] To: ${input.to} | ${input.message}`);
   return { sent: true, provider: "console", messageId: input.templateId };
 }

@@ -1,3 +1,4 @@
+import { logger } from "../lib/logger.js";
 import { createTransport, type Transporter } from "nodemailer";
 import { t } from "@workspace/i18n";
 import type { Language } from "@workspace/i18n";
@@ -113,7 +114,7 @@ export async function sendVerificationEmail(
   const tr = settings ? buildTransporterFromSettings(settings) : null;
   const transport = tr || getEnvTransporter();
   if (!transport) {
-    console.log(`[EMAIL] Verification email for ${to} — SMTP not configured. Link: ${verificationLink}`);
+    logger.info(`[EMAIL] Verification email for ${to} — SMTP not configured. Link: ${verificationLink}`);
     return { sent: false, reason: "SMTP not configured" };
   }
 
@@ -142,7 +143,7 @@ export async function sendVerificationEmail(
     });
     return { sent: true };
   } catch (err: any) {
-    console.error(`[EMAIL] Failed to send verification email to ${to}:`, err?.message);
+    logger.error(`[EMAIL] Failed to send verification email to ${to}:`, err?.message);
     return { sent: false, reason: err?.message };
   }
 }
@@ -170,7 +171,7 @@ export async function sendPasswordResetEmail(
   const tr = settings ? buildTransporterFromSettings(settings) : null;
   const transport = tr || getEnvTransporter();
   if (!transport) {
-    console.log(`[EMAIL] Password reset OTP for ${to} — SMTP not configured.`);
+    logger.info(`[EMAIL] Password reset OTP for ${to} — SMTP not configured.`);
     return { sent: false, reason: "SMTP not configured" };
   }
 
@@ -198,7 +199,7 @@ export async function sendPasswordResetEmail(
     });
     return { sent: true };
   } catch (err: any) {
-    console.error(`[EMAIL] Failed to send reset email to ${to}:`, err?.message);
+    logger.error(`[EMAIL] Failed to send reset email to ${to}:`, err?.message);
     return { sent: false, reason: err?.message };
   }
 }
@@ -248,7 +249,7 @@ export async function sendMagicLinkEmail(
 
   const tr = buildTransporterFromSettings(settings) || getEnvTransporter();
   if (!tr) {
-    console.log(`[EMAIL] Magic link for ${email}: ${magicUrl}`);
+    logger.info(`[EMAIL] Magic link for ${email}: ${magicUrl}`);
     return { sent: false, error: "SMTP not configured — logged to console" };
   }
 
@@ -256,7 +257,7 @@ export async function sendMagicLinkEmail(
     await tr.sendMail({ from: resolveFrom(), to: email, subject, html });
     return { sent: true };
   } catch (err: any) {
-    console.error(`[EMAIL] Failed to send magic link to ${email}:`, err.message);
+    logger.error(`[EMAIL] Failed to send magic link to ${email}:`, err.message);
     return { sent: false, error: err.message };
   }
 }
@@ -303,7 +304,7 @@ export async function sendAdminAlert(
 
   const tr = buildTransporterFromSettings(settings);
   if (!tr) {
-    console.log(`[EMAIL:admin-alert] SMTP not configured — logging alert: ${subject}`);
+    logger.info(`[EMAIL:admin-alert] SMTP not configured — logging alert: ${subject}`);
     return { sent: false, reason: "SMTP credentials not configured. Set smtp_host, smtp_user, smtp_password in Integrations → Email." };
   }
 
@@ -327,10 +328,10 @@ export async function sendAdminAlert(
 
   try {
     await tr.sendMail({ from, to, subject: `[${appName}] ${subject}`, html: fullHtml });
-    console.log(`[EMAIL:admin-alert] Sent "${alertType}" alert to ${to}`);
+    logger.info(`[EMAIL:admin-alert] Sent "${alertType}" alert to ${to}`);
     return { sent: true };
   } catch (err: any) {
-    console.error(`[EMAIL:admin-alert] Failed to send "${alertType}" alert:`, err.message);
+    logger.error(`[EMAIL:admin-alert] Failed to send "${alertType}" alert:`, err.message);
     return { sent: false, error: err.message };
   }
 }
@@ -502,9 +503,9 @@ export async function sendAdminPasswordResetLinkEmail(
   const transport = tr || getEnvTransporter();
 
   if (!transport) {
-    console.log(`[EMAIL] (SMTP not configured) Admin password reset link for ${to}`);
-    console.log(`[EMAIL]   ${resetUrl}`);
-    console.log(`[EMAIL]   expires at ${expiresIso}`);
+    logger.info(`[EMAIL] (SMTP not configured) Admin password reset link for ${to}`);
+    logger.info(`[EMAIL]   ${resetUrl}`);
+    logger.info(`[EMAIL]   expires at ${expiresIso}`);
     return { sent: false, reason: "SMTP not configured" };
   }
 
@@ -553,7 +554,7 @@ export async function sendAdminPasswordResetLinkEmail(
     });
     return { sent: true };
   } catch (err: any) {
-    console.error(`[EMAIL] Failed to send admin reset link to ${to}:`, err?.message);
+    logger.error(`[EMAIL] Failed to send admin reset link to ${to}:`, err?.message);
     return { sent: false, reason: err?.message };
   }
 }
@@ -595,9 +596,9 @@ export async function sendAdminPasswordOutOfBandResetEmail(
   const transport = tr || getEnvTransporter();
 
   if (!transport) {
-    console.log(`[EMAIL] (SMTP not configured) Out-of-band admin password reset alert for ${to}`);
-    console.log(`[EMAIL]   detectedAt:        ${detectedIso}`);
-    console.log(`[EMAIL]   previousChangedAt: ${previousIso}`);
+    logger.info(`[EMAIL] (SMTP not configured) Out-of-band admin password reset alert for ${to}`);
+    logger.info(`[EMAIL]   detectedAt:        ${detectedIso}`);
+    logger.info(`[EMAIL]   previousChangedAt: ${previousIso}`);
     return { sent: false, reason: "SMTP not configured" };
   }
 
@@ -672,7 +673,7 @@ export async function sendAdminPasswordOutOfBandResetEmail(
     });
     return { sent: true };
   } catch (err: any) {
-    console.error(
+    logger.error(
       `[EMAIL] Failed to send out-of-band reset alert to ${to}:`,
       err?.message,
     );
@@ -684,6 +685,6 @@ export async function sendAdminPasswordOutOfBandResetEmail(
 export async function sendEmail(
   input: { to: string; subject: string; html: string; templateId?: string }
 ): Promise<{ messageId?: string } & EmailResult> {
-  console.log(`[Email:generic] To: ${input.to} | Subject: ${input.subject}`);
+  logger.info(`[Email:generic] To: ${input.to} | Subject: ${input.subject}`);
   return { sent: true, provider: "console", messageId: input.templateId };
 }

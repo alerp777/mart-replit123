@@ -49,13 +49,7 @@ export type OwnershipResourceType =
   | "parcel";         /* alias for "parcel_booking" */
 
 function getCallerId(req: Request): string | undefined {
-  return (
-    (req as any).riderId ??
-    (req as any).vendorId ??
-    (req as any).customerId ??
-    (req as any).userId ??
-    (req as any).user?.id
-  );
+  return req.riderId ?? req.vendorId ?? req.customerId ?? req.userId;
 }
 
 /**
@@ -65,7 +59,7 @@ function getCallerId(req: Request): string | undefined {
  */
 export function verifyOwnership(resourceType: OwnershipResourceType) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    if ((req as any).adminId) {
+    if (req.adminId) {
       next();
       return;
     }

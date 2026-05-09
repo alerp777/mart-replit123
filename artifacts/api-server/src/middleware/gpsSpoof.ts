@@ -79,7 +79,7 @@ export function gpsAntiSpoofMiddleware(req: Request, res: Response, next: NextFu
   }
 
   const ip = getClientIp(req);
-  const userId = (req as any).riderId ?? (req as any).userId ?? (req as any).customerId ?? "unknown";
+  const userId = req.riderId ?? req.userId ?? req.customerId ?? "unknown";
 
   const acc = accuracy !== undefined ? parseFloat(String(accuracy)) : undefined;
 
