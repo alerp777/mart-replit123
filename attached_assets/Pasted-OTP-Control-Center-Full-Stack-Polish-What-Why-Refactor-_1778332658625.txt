@@ -1,0 +1,37 @@
+OTP Control Center — Full-Stack Polish
+What & Why
+Refactor the OTP Control Center to be the single authoritative hub for all OTP management. Eliminate duplicate controls from Users Management, add a dedicated rate-limiting card, harden the global bypass with confirmation and auditing, and expose a read-only delivery OTP viewer for customer service.
+
+Done looks like
+Users Management page shows only a read-only OTP bypass status badge per user, with a "Manage in OTP Center" button — no grant/revoke/generate actions there anymore
+OTP Control Center has a dedicated "OTP Rate Limiting" card with per-phone, per-IP, and window inputs and a Save button (replaces the generic settings table entries)
+System Settings security tab no longer shows the three OTP rate limiting rows — they live exclusively in the OTP Control Center
+Global OTP Bypass shows a confirmation modal when toggled ON, with a mandatory reason text field; on confirmation it fires an internal admin notification; audit log entry includes the reason
+Delivery OTP Viewer section in OTP Control Center lets admins search by Order/Ride ID and see the trip OTP, status (Pending / Used / Expired), and creation time — read-only, no control
+Out of scope
+Changing the underlying bypass engine or rate-limiting middleware logic
+Adding Slack/Discord webhook integration (notification goes to internal admin notification system already in use)
+Any changes to the Rider App or Customer App OTP display flow
+Steps
+Remove duplicate OTP actions from Users Management — In users.tsx, strip out the Grant Bypass, Revoke Bypass, Generate OTP, and Reset OTP action buttons/dropdowns. Replace with a read-only badge showing bypass status (active/inactive, expiry time if active) and a "Manage in OTP Center" link that navigates to /admin/otp-control.
+
+Add Rate Limiting card to OTP Control Center (frontend) — In otp-control.tsx, add a new ProCard section "OTP Rate Limiting" with three numeric inputs (Per Phone, Per IP, Window in minutes) pre-filled from the existing platform settings API. Wire a Save button to PATCH /admin/settings (already used elsewhere) to persist the three keys.
+
+Hide OTP rate limit rows from System Settings generic table — In settings-render.tsx, add security_otp_max_per_phone, security_otp_max_per_ip, and security_otp_window_min to an exclusion set so they are filtered out of the generic security settings render loop.
+
+Global bypass confirmation modal with mandatory reason (frontend) — In otp-control.tsx, intercept the Global Suspend action with a confirmation modal that requires a non-empty reason string before proceeding. Pass the reason to the existing POST /admin/otp/disable call.
+
+Global bypass reason — backend + audit log — In artifacts/api-server/src/routes/admin/otp.ts, update the POST /otp/disable route to accept an optional reason body field and pass it through to the audit log entry written to auth_audit_log / otp_bypass_audit. Emit an internal admin notification (using the existing notification/alert utility already in the project) when global bypass is activated.
+
+Delivery OTP read-only backend endpoint — Add GET /admin/otp/delivery-otp/:rideId in artifacts/api-server/src/routes/admin/otp.ts. Fetches tripOtp, otpVerified, otpAttempts, createdAt, and ride status from the rides table. Derives display status: Pending (unverified, not expired), Used (otpVerified = true), Expired (ride cancelled or >15 min old and unverified). Admin-auth protected.
+
+Delivery OTP viewer section (frontend) — In otp-control.tsx, add a "Delivery OTP Viewer" ProCard section with a search input (Order/Ride ID), a Lookup button, and a result card showing OTP digits, status badge, ride ID, and timestamp. Calls the new backend endpoint. Clearly labeled read-only with no action buttons.
+
+Relevant files
+artifacts/admin/src/pages/otp-control.tsx
+artifacts/admin/src/pages/users.tsx
+artifacts/admin/src/pages/settings-render.tsx
+artifacts/api-server/src/routes/admin/otp.ts
+artifacts/api-server/src/routes/admin-shared.ts
+artifacts/api-server/src/routes/admin/system.ts
+lib/db/src/schema/platform_settings.ts

@@ -1,0 +1,60 @@
+✅ Create these files with FULL CRUD:
+1. /server/routes/experiments.ts
+   - GET /api/experiments (list + pagination)
+   - POST /api/experiments (create)
+   - PUT /api/experiments/:id (update)
+   - DELETE /api/experiments/:id (delete)
+   - GET /api/experiments/:id (single)
+
+2. /server/routes/whatsapp-delivery.ts
+   - GET /api/whatsapp/delivery-log (with filters)
+   - POST /api/whatsapp/delivery-log/retry
+   - GET /api/whatsapp/delivery-log/stats
+
+3. /server/routes/business-rules.ts
+   - GET /api/business-rules (list)
+   - POST /api/business-rules (create)
+   - PUT /api/business-rules/:id (update)
+   - DELETE /api/business-rules/:id (delete)
+   - POST /api/business-rules/validate (validate rule syntax)
+
+4. /server/routes/loyalty.ts (FULL CRUD ADD)
+   - POST /api/loyalty/campaigns
+   - PUT /api/loyalty/campaigns/:id
+   - DELETE /api/loyalty/campaigns/:id
+   - POST /api/loyalty/rewards
+   - PUT /api/loyalty/rewards/:id
+   - DELETE /api/loyalty/rewards/:id
+   - GET /api/loyalty/stats
+Task 1.2: Popups AI Real Implementation
+javascript
+// /server/routes/popups.ts - REPLACE STUB
+POST /api/popups/ai-generate
+{
+  // Step 1: Validate input with Zod
+  const schema = z.object({
+    targetAudience: z.string().min(3),
+    goal: z.enum(['conversion', 'signup', 'promo']),
+    tone: z.enum(['urgent', 'friendly', 'luxury']).optional(),
+    platform: z.enum(['web', 'mobile']).optional()
+  });
+
+  // Step 2: Call Gemini API
+  const prompt = `Generate ${platform} popup...`;
+  const response = await gemini.generateContent(prompt);
+
+  // Step 3: Parse + validate response
+  // Step 4: Save to DB + return
+}
+Task 1.3: Register All Routes in Server
+javascript
+// /server/index.ts - ADD THESE LINES
+import experimentsRoutes from './routes/experiments';
+import whatsappDeliveryRoutes from './routes/whatsapp-delivery';
+import businessRulesRoutes from './routes/business-rules';
+import loyaltyFullRoutes from './routes/loyalty-full';
+
+app.use('/api/experiments', experimentsRoutes);
+app.use('/api/whatsapp', whatsappDeliveryRoutes);
+app.use('/api/business-rules', businessRulesRoutes);
+app.use('/api/loyalty', loyaltyFullRoutes);
