@@ -1,0 +1,52 @@
+API Server Full Production Audit & Gap Fix
+What & Why
+A systematic audit of the entire artifacts/api-server codebase to identify and fix every production-readiness gap, bug, security issue, duplicate code, inconsistency, and missing feature before the platform goes live. The goal is a clean, conflict-free, professional-grade Express server with zero silent failures, full type safety, consistent response patterns, and correct startup behaviour.
+
+Done looks like
+All identified bugs are fixed and there are no duplicate implementations of the same logic
+Every console.log/warn/error in production code is replaced with the structured pino logger
+The ride dispatch engine starts correctly on server boot
+Admin JWT and CSRF secrets fail-fast in production when not configured (no silent weak-key fallback)
+All API responses use the standardised sendSuccess / sendError helpers — no raw res.json({}) calls in route handlers
+Request timeouts prevent indefinitely-stalled connections
+File upload warnings exist when running in production with local disk storage
+userId and all other auth-injected properties are properly declared in the Express type augmentation
+No duplicate helper functions between auth/index.ts and auth/helpers.ts
+In-memory admin login lockout is persisted in Redis (with in-memory fallback)
+Rate limiting covers all public endpoints susceptible to scraping
+PII fields in request bodies are redacted from pino logs
+TypeScript compiles cleanly with no any suppressions on auth-injected request fields
+Out of scope
+Splitting auth/index.ts or rider/index.ts into smaller modules (file size is a code-quality concern, not a production bug — safe to defer)
+Migrating file uploads to cloud object storage (architectural decision, separate task)
+Adding full OpenAPI documentation coverage for every route
+Steps
+Fix silent weak-secret fallback in admin JWT & CSRF utils — In utils/admin-jwt.ts and utils/admin-csrf.ts, remove the || 'dev_...' fallback strings and add production-fatal / dev-warning guards identical to the pattern used in middleware/security.ts for JWT_SECRET. The env vars ADMIN_ACCESS_TOKEN_SECRET, ADMIN_REFRESH_TOKEN_SECRET, and ADMIN_CSRF_SECRET must be required in production.
+
+Start the ride dispatch engine on server boot — startDispatchEngine() is exported from routes/rides/dispatch.ts and re-exported from routes/rides/index.ts but is never called. Call it from scheduler.ts::startScheduler() (alongside the existing cleanup jobs) so ride dispatch activates on every server start.
+
+Replace all console.log/warn/error with structured pino logger — Across lib/redis.ts, lib/db.ts, lib/webpush.ts, middleware/rate-limit.ts, services/admin-seed.service.ts, services/admin-password-watch.service.ts, services/sqlMigrationRunner.ts, and lib/demo-snapshot.ts, replace every console.* call with the corresponding logger.* call at the right level. Import logger where it is not yet imported.
+
+Eliminate duplicate helper functions from auth/index.ts — auth/helpers.ts was created as the single source of truth for shared auth utilities but auth/index.ts still defines its own local copies of hashOtp, normalizeVehicleTypeForStorage, generateVerificationToken, hashVerificationToken, isValidCanonicalPhone, isRiderSession, shouldUseSecureCookie, setRiderRefreshCookie, clearRiderRefreshCookie, setVendorRefreshCookie, clearVendorRefreshCookie, and the cookie constants. Remove the local definitions in auth/index.ts and import them from ./helpers.js instead.
+
+Fix the Express Request type declarations — src/types/express.d.ts is missing userId?: string which is set by requireRole in middleware/requireRole.ts (as req.userId = payload.userId) and read by many route handlers and middleware. Add userId alongside the existing customerId, vendorId, riderId. Also add userPhone, userRole, userRoles, and tokenVersion which are also set by requireRole but not declared.
+
+Normalise requireRole across the codebase — There are two requireRole implementations: one in middleware/security.ts (used by vendor.ts via import { requireRole } from "../middleware/security.js") and one in middleware/requireRole.ts. Review which is the canonical version, merge the unique logic (e.g., the vendorApprovalCheck option from security.ts's version), and update all import sites to use a single implementation. Remove the redundant one.
+
+Add request timeout middleware — Mount a request timeout guard (using res.setTimeout or a lightweight middleware) early in app.ts so requests that take longer than a configurable REQUEST_TIMEOUT_MS (default 30 s) are terminated with a 503 response rather than hanging indefinitely. Skip the timeout for SSE / WebSocket upgrade requests.
+
+Add rate limiting to public scraping-prone endpoints — Apply globalLimiter (or a dedicated tighter limiter) to: GET /api/banners, GET /api/categories, GET /api/products, GET /api/promotions/public, GET /api/recommendations, GET /api/public-vendors, and GET /api/dl/*. These are currently unlimited public endpoints that can be scraped without restriction.
+
+Persist admin login lockout in Redis — Replace the in-memory adminLoginAttempts Map in admin-shared.ts with a Redis-backed counter (falling back to the in-memory map when Redis is unavailable, matching the pattern used by rate-limit.ts). This ensures brute-force lockout survives server restarts.
+
+Redact PII fields from pino request body logs — Extend the redact array in lib/logger.ts to include common body-level PII paths: req.body.phone, req.body.password, req.body.cnic, req.body.nationalId, req.body.email, req.body.otp. Use pino's wildcard redact syntax where supported.
+
+Warn on local disk uploads in production — In routes/uploads.ts, at the point where UPLOADS_DIR is resolved, add a startup warning (logged via logger.warn) when NODE_ENV === 'production', stating that local disk uploads are ephemeral and will be lost on container restart.
+
+Fix inconsistent direct res.json() calls in route handlers — Audit all route files and replace direct res.json({success: false, error: ...}) / res.status(N).json(...) patterns with the appropriate sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationError, or sendUnauthorized helper from lib/response.ts. Focus on the admin routes (admin/finance/wallets.ts, admin/security.ts) and the auth/index.ts endpoints that still use raw .json().
+
+Remove the admin-shared.ts circular re-export tangle — admin-shared.ts re-exports dozens of symbols from middleware/security.ts, lib/logger.ts, lib/id.ts, and local definitions all in one file, creating a maintenance liability and circular-import risk. Split: keep auth/business helpers local to admin-shared, and have route files import directly from their source modules (middleware/security.ts, lib/response.ts, etc.) rather than going through admin-shared as a proxy.
+
+Final TypeScript typecheck pass — Run tsc --noEmit on the API server and fix all remaining type errors introduced by the above changes. Ensure no @ts-ignore or (req as any) suppressions remain for the auth-injected request fields after step 5 fixes the type declarations.
+
+Relevant files
