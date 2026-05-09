@@ -401,6 +401,10 @@ export const DEFAULT_PLATFORM_SETTINGS: DefaultPlatformSetting[] = [
   { key: "health_alert_slack_webhook",   value: "",    label: "Slack Webhook URL",             category: "health_monitor" },
   { key: "email_alert_health_critical",  value: "on",  label: "Email: Critical Health Alerts", category: "health_monitor" },
   { key: "smtp_admin_alert_email",       value: "",    label: "Admin Alert Email Recipient",   category: "health_monitor" },
+
+  /* ── SUPER-ADMIN SECURITY ──────────────────────────────────────────────── */
+  { key: "security_super_admin_mfa_required", value: "off", label: "Require 2FA for Super Admin Login", category: "security" },
+  { key: "admin_master_totp_secret",          value: "",    label: "Super Admin TOTP Secret (base32)",  category: "security" },
 ];
 export const ADMIN_TOKEN_TTL_HRS = 24;
 export const ADMIN_MAX_ATTEMPTS = 5;
@@ -459,7 +463,17 @@ export function signAdminJwt(adminId: string | null, role?: string, name?: strin
 export function verifyAdminJwt(t: string) {
   try { return jwt.verify(t, process.env["JWT_SECRET"] || "key"); } catch { return null; }
 }
-export async function getAdminSecret(_id?: string) { return process.env["ADMIN_SECRET"] || null; }
+export async function getAdminSecret(_id?: string) {
+  /* Use the runtime-config module so a secret rotated via the rotate-secret
+     endpoint takes effect immediately without a server restart. Falls back to
+     the env var if the module is not yet seeded. */
+  try {
+    const { getAdminSecretRuntime } = await import("../lib/runtime-config.js");
+    const runtime = getAdminSecretRuntime();
+    if (runtime) return runtime;
+  } catch { /* non-fatal — fall through */ }
+  return process.env["ADMIN_SECRET"] || null;
+}
 export async function verifyAdminSecret(p: string, h: string) {
   try { return await bcrypt.compare(p, h); } catch { return p === h; }
 }

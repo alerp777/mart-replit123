@@ -85,12 +85,21 @@ export async function checkOTPBypass(phone: string): Promise<OTPBypassStatus> {
     });
 
     if (whitelisted) {
-      return {
-        isBypassed: true,
-        reason: "whitelist",
-        expiresAt: whitelisted.expiresAt || null,
-        bypassCode: whitelisted.bypassCode,
-      };
+      /* Production safety guard: the test bypass code "123456" is rejected
+         in production regardless of what is stored in the whitelist table.
+         This prevents development test codes from ever being used in a live
+         environment, even if they were accidentally committed to the DB. */
+      if (process.env.NODE_ENV === "production" && whitelisted.bypassCode === "123456") {
+        logger.warn({ phone }, "[OTPBypass] Rejected test bypass code '123456' in production");
+        // Fall through as if this entry does not exist — continue normal OTP flow.
+      } else {
+        return {
+          isBypassed: true,
+          reason: "whitelist",
+          expiresAt: whitelisted.expiresAt || null,
+          bypassCode: whitelisted.bypassCode,
+        };
+      }
     }
 
     return {

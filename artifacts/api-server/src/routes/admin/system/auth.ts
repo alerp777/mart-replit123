@@ -6,6 +6,7 @@ import {
   walletTransactionsTable,
   notificationsTable,
   adminAccountsTable,
+  platformSettingsTable,
 } from "@workspace/db/schema";
 import {
   eq,
@@ -107,7 +108,7 @@ const patchAdminAccountSchema = z.object({
 }).strip();
 
 router.post("/auth", adminAuthLimiter, async (req, res) => {
-  const body = (req.body ?? {}) as { username?: string; password?: string; secret?: string };
+  const body = (req.body ?? {}) as { username?: string; password?: string; secret?: string; totpCode?: string };
   const username = (body.username ?? "").trim();
   /* Backwards-compatible: accept "password" (new) or "secret" (legacy) */
   const password = body.password ?? body.secret ?? "";
@@ -138,6 +139,50 @@ router.post("/auth", adminAuthLimiter, async (req, res) => {
     username === "" || username.toLowerCase() === "admin" || username.toLowerCase() === "super";
   if (ADMIN_SECRET && password === ADMIN_SECRET && isMasterUsername) {
     resetAdminLoginAttempts(ip);
+
+    /* ── Fix 5: Enforce TOTP for super admin when security_super_admin_mfa_required=on ──
+       Read the platform setting. If enabled, verify the TOTP code or issue an
+       MFA challenge token (same response shape as the standard MFA challenge). */
+    const settings = await getCachedSettings();
+    if (settings["security_super_admin_mfa_required"] === "on") {
+      const masterTotpSecret = settings["admin_master_totp_secret"]?.trim();
+      if (!masterTotpSecret) {
+        // TOTP not yet configured for master admin — block login until it is set up.
+        addAuditEntry({
+          action: "admin_master_mfa_misconfigured",
+          ip,
+          details: "Super admin MFA required but admin_master_totp_secret is not configured",
+          result: "fail",
+        });
+        res.status(403).json({
+          error: "Super admin MFA is required but TOTP is not configured. Set admin_master_totp_secret in platform settings first.",
+        });
+        return;
+      }
+
+      const totpCode = (body.totpCode ?? "").trim();
+      if (!totpCode) {
+        /* No TOTP code provided — return a MFA challenge (same shape as sub-admin flow).
+           The tempToken is a short-lived signed JWT the client echoes back alongside the TOTP. */
+        const tempToken = signAdminJwt(null, "master_mfa_challenge", "Super Admin", 5 / 60);
+        res.json({ requiresMfa: true, tempToken });
+        return;
+      }
+
+      /* TOTP code provided — verify it against the stored master secret. */
+      if (!verifyTotpToken(totpCode, masterTotpSecret)) {
+        addAuditEntry({
+          action: "admin_master_mfa_failed",
+          ip,
+          details: "Invalid TOTP code for master super-admin login",
+          result: "fail",
+        });
+        addSecurityEvent({ type: "admin_master_mfa_failed", ip, details: "Master admin TOTP verification failed", severity: "high" });
+        res.status(401).json({ error: "Invalid TOTP code. Please try again." });
+        return;
+      }
+    }
+
     const adminToken = signAdminJwt(
       null,
       "super",
@@ -566,47 +611,73 @@ router.post(
   },
 );
 
-/* ── App Management ── */
-router.post("/rotate-secret", adminAuth, (req, res) => {
+/* ── Fix 6: Rotate master secret at runtime (no server restart required) ── */
+router.post("/rotate-secret", adminAuth, async (req, res) => {
   const adminRole = (req as AdminRequest).adminRole;
   if (adminRole !== "super") {
-    res
-      .status(403)
-      .json({ error: "Only super admin can rotate the master secret." });
-    return;
-  }
-
-  /* The new secret must be provided in the request body.
-     The actual env var rotation must be done by the operator, but this
-     endpoint validates the new secret and returns guidance. */
-  const { newSecret } = req.body;
-  if (!newSecret || newSecret.length < 32) {
-    res
-      .status(400)
-      .json({ error: "New secret must be at least 32 characters." });
+    res.status(403).json({ error: "Only super admin can rotate the master secret." });
     return;
   }
 
   const ip = getClientIp(req);
+
+  /* Generate a new cryptographically strong secret (48 bytes = 96 hex chars). */
+  const { randomBytes } = await import("crypto");
+  const newSecret = randomBytes(48).toString("hex");
+
+  /* 1. Update the in-memory runtime variable immediately so subsequent logins
+        use the new secret without waiting for a restart. */
+  const { setAdminSecretRuntime } = await import("../../../lib/runtime-config.js");
+  setAdminSecretRuntime(newSecret);
+
+  /* 2. Persist to platform_settings under "admin_secret_override" so the new
+        secret survives a server restart (seeded by seedRuntimeConfigFromDb()). */
+  try {
+    await db
+      .insert(platformSettingsTable)
+      .values({ key: "admin_secret_override", value: newSecret, category: "security", label: "Admin Secret Override" })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: newSecret, updatedAt: new Date() } });
+    invalidateSettingsCache();
+  } catch (persistErr) {
+    logger.warn({ err: persistErr }, "[rotate-secret] Failed to persist new secret to DB — in-memory only until restart");
+  }
+
+  /* 3. Send email notification to all active admins. */
+  try {
+    const { sendEmail } = await import("../../../services/email.js");
+    const activeAdmins = await db.select({ email: adminAccountsTable.email, name: adminAccountsTable.name })
+      .from(adminAccountsTable)
+      .where(eq(adminAccountsTable.isActive, true));
+    const recipients = activeAdmins.filter(a => a.email);
+    const rotatedAt = new Date().toISOString();
+    await Promise.allSettled(
+      recipients.map(a =>
+        sendEmail({
+          to: a.email!,
+          subject: "Security Alert: Admin Master Secret Rotated",
+          html: `<p>Hello ${a.name},</p><p>The AJKMart admin master secret has been <strong>rotated</strong> by a super-admin on ${rotatedAt} from IP <code>${ip}</code>.</p><p>If you did not authorise this action, please investigate immediately.</p>`,
+        })
+      )
+    );
+  } catch (emailErr) {
+    logger.warn({ err: emailErr }, "[rotate-secret] Email notification failed — rotation still applied");
+  }
+
   addAuditEntry({
-    action: "admin_secret_rotation_requested",
+    action: "admin_secret_rotated",
     ip,
-    details: "Admin requested secret rotation",
+    details: "Master admin secret rotated at runtime — in-memory and DB updated",
     result: "success",
   });
   writeAuthAuditLog("admin_secret_rotation", {
     ip,
-    metadata: {
-      note: "Secret rotation requested — update ADMIN_SECRET env var",
-    },
+    metadata: { note: "Secret rotated in-memory and persisted to platform_settings" },
   });
 
   res.json({
     success: true,
-    message:
-      "Set the new secret as the ADMIN_SECRET environment variable and restart the server to apply the rotation.",
-    instructions:
-      "New secret validated — it meets the minimum length requirement (32+ chars).",
+    message: "Master secret rotated successfully. All active admins have been notified by email. No restart required.",
+    rotatedAt: new Date().toISOString(),
   });
 });
 

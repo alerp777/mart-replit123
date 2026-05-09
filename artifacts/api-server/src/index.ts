@@ -210,6 +210,16 @@ async function main() {
     logger.info(`[port:check] Primary port ${PORT} is available`);
   }
 
+  /* Seed runtime config from DB so a previously-rotated ADMIN_SECRET
+     takes effect on restart without requiring an env-var change. */
+  try {
+    const { seedRuntimeConfigFromDb } = await import("./lib/runtime-config.js");
+    await seedRuntimeConfigFromDb();
+    logger.info("[runtime-config] Seeded from DB");
+  } catch (e) {
+    logger.warn({ err: e }, "[runtime-config] Seed failed — env var fallback will be used");
+  }
+
   const server = createServer();
 
   // Open the port FIRST so the platform's port detector sees a live listener

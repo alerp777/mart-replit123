@@ -179,6 +179,7 @@ export default function AuthMethodsPage() {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [revealedSecret, setRevealedSecret] = useState<Record<string, boolean>>({});
+  const [rotatingSecret, setRotatingSecret] = useState(false);
 
   const dirtyKeys = useMemo(() => {
     const set = new Set<string>();
@@ -233,6 +234,28 @@ export default function AuthMethodsPage() {
   }, [setValue]);
 
   const resetAll = useCallback(() => setLocalValues(savedValues), [savedValues]);
+
+  /* Super admin MFA toggle — reads/writes security_super_admin_mfa_required */
+  const superAdminMfaOn = localValues["security_super_admin_mfa_required"] === "on";
+
+  /* Rotate Master Secret — calls POST /api/admin/system/rotate-secret */
+  const handleRotateSecret = useCallback(async () => {
+    if (!window.confirm(
+      "This will immediately rotate the master admin secret and notify all active admins by email.\n\nYou will need to use the new secret for your next login. Continue?"
+    )) return;
+    setRotatingSecret(true);
+    try {
+      const data = await fetcher("/admin/system/rotate-secret", { method: "POST" });
+      toast({
+        title: "Master secret rotated",
+        description: data?.message ?? "New secret is now active. All admins notified.",
+      });
+    } catch (e: any) {
+      toast({ title: "Rotation failed", description: e?.message || "Try again", variant: "destructive" });
+    } finally {
+      setRotatingSecret(false);
+    }
+  }, [toast]);
 
   const handleSave = useCallback(async () => {
     if (dirtyKeys.size === 0) return;
@@ -390,6 +413,17 @@ export default function AuthMethodsPage() {
               ))}
             </div>
           </div>
+
+          {/* Unsaved-changes inline warning banner — immediate visual feedback when any toggle is changed */}
+          {dirtyKeys.size > 0 && (
+            <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 shadow-sm">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+              <p className="text-xs sm:text-[13px] leading-relaxed flex-1">
+                <span className="font-bold">You have {dirtyKeys.size} unsaved change{dirtyKeys.size > 1 ? "s" : ""}.</span>{" "}
+                These will be lost if you navigate away. Click <span className="font-semibold">Save changes</span> to apply them.
+              </p>
+            </div>
+          )}
 
           {/* Info banner */}
           <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-xl bg-indigo-50/60 border border-indigo-200 text-indigo-900">
@@ -602,6 +636,71 @@ export default function AuthMethodsPage() {
               <Button variant="ghost" size="sm" onClick={() => setSearch("")} className="mt-2">Clear search</Button>
             </div>
           )}
+
+          {/* ───────── Super Admin Security ───────── */}
+          <section className="mt-2">
+            <div className="mb-3">
+              <h2 className="text-sm font-bold text-slate-800">Super Admin Security</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Settings that apply to the master super-admin login only.</p>
+            </div>
+            <div className="flex flex-col gap-3">
+              {/* Require 2FA for Super Admin toggle */}
+              <Card className="p-4 flex flex-col sm:flex-row sm:items-center gap-3 border border-slate-200 shadow-sm rounded-2xl">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+                    <span className="text-sm font-semibold text-slate-800">Require 2FA for Super Admin</span>
+                    {superAdminMfaOn
+                      ? <Badge className="text-[10px] px-1.5 py-0 h-4 bg-emerald-100 text-emerald-700 border-emerald-200 font-semibold">Enabled</Badge>
+                      : <Badge className="text-[10px] px-1.5 py-0 h-4 bg-slate-100 text-slate-500 border-slate-200 font-semibold">Disabled</Badge>
+                    }
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    When enabled, the master super-admin must provide a valid TOTP code on every login.
+                    Set <code className="font-mono bg-slate-100 px-1 rounded text-[10px]">admin_master_totp_secret</code> in Platform Settings before enabling.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={superAdminMfaOn}
+                  onClick={() => setValue("security_super_admin_mfa_required", superAdminMfaOn ? "off" : "on")}
+                  className={`relative inline-flex items-center h-6 w-11 shrink-0 rounded-full border-2 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 cursor-pointer ${
+                    superAdminMfaOn
+                      ? "bg-indigo-600 border-indigo-600"
+                      : "bg-slate-200 border-slate-300"
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${superAdminMfaOn ? "translate-x-5" : "translate-x-0.5"}`} />
+                </button>
+              </Card>
+
+              {/* Rotate Master Secret button */}
+              <Card className="p-4 flex flex-col sm:flex-row sm:items-center gap-3 border border-slate-200 shadow-sm rounded-2xl">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <RotateCcw className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span className="text-sm font-semibold text-slate-800">Rotate Master Secret</span>
+                    <Badge className="text-[10px] px-1.5 py-0 h-4 bg-rose-50 text-rose-700 border-rose-200 font-semibold">Destructive</Badge>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Generates a new cryptographically strong master secret immediately without a server restart.
+                    The old secret is invalidated at once and all active admins are notified by email.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={rotatingSecret}
+                  onClick={handleRotateSecret}
+                  className="shrink-0 border-rose-300 text-rose-700 hover:bg-rose-50 hover:border-rose-400"
+                >
+                  {rotatingSecret ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5 mr-1.5" />}
+                  {rotatingSecret ? "Rotating…" : "Rotate secret"}
+                </Button>
+              </Card>
+            </div>
+          </section>
         </div>
 
         {/* ───────── Sticky save bar (mobile/tablet) ───────── */}

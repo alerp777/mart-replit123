@@ -633,6 +633,44 @@ export async function recordFailedAttempt(key: string, maxAttempts: number, lock
       updatedAt: now,
     }).where(eq(rateLimitsTable.key, key));
 
+    /* (a) Lockout threshold reached: emit a security event so the lockout
+       appears in the security event history visible on the Security Dashboard. */
+    if (newAttempts >= maxAttempts) {
+      addSecurityEvent({
+        type: "account_locked",
+        ip: "server",
+        userId: key,
+        details: `Account locked after ${newAttempts} failed attempts. Locked until ${lockedUntil.toISOString()}. Key: ${key}`,
+        severity: "high",
+      });
+
+      /* (b) Fire-and-forget email alert to the locked account's owner.
+         We attempt a best-effort lookup by phone or email (the key may be
+         either). The email send is non-blocking — a failure here never
+         blocks the main auth flow. */
+      (async () => {
+        try {
+          const { sendEmail } = await import("../services/email.js");
+          const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key);
+          let email: string | null = looksLikeEmail ? key : null;
+          if (!email) {
+            const rows = await db.select({ email: usersTable.email })
+              .from(usersTable)
+              .where(eq(usersTable.phone, key))
+              .limit(1);
+            email = rows[0]?.email ?? null;
+          }
+          if (email) {
+            await sendEmail({
+              to: email,
+              subject: "Security Alert: Your account has been temporarily locked",
+              html: `<p>Your account has been temporarily locked due to ${newAttempts} consecutive failed login attempts.</p><p>The lockout will expire in <strong>${lockoutMinutes} minutes</strong>.</p><p>If you did not attempt to log in, please contact support immediately.</p><p>Locked at: ${now.toISOString()}</p>`,
+            });
+          }
+        } catch { /* non-fatal — email failure must never affect auth flow */ }
+      })();
+    }
+
     return { attempts: newAttempts, lockedUntil: newAttempts >= maxAttempts ? lockedUntil.getTime() : null };
   } catch {
     return { attempts: 0, lockedUntil: null };

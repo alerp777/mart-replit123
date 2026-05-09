@@ -271,6 +271,22 @@ async function isValidCanonicalPhone(phone: string): Promise<boolean> {
 
 const router: IRouter = Router();
 
+/* ── Pending TOTP secrets — two-phase setup, NOT written to DB until verified ──
+   When a user calls GET /auth/2fa/setup we generate a secret and store it here
+   in memory (keyed by userId, TTL 10 minutes) instead of immediately persisting
+   it to the database. The DB write only happens after the user successfully
+   verifies their first TOTP code in POST /auth/2fa/verify-setup (or /totp/enable).
+   This prevents a half-initialised secret from sitting in the DB when the user
+   never completes enrollment (e.g. they close the tab mid-setup). */
+const pendingTotpSecrets = new Map<string, { secret: string; encryptedSecret: string; createdAt: number }>();
+const PENDING_TOTP_TTL_MS = 10 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [userId, entry] of pendingTotpSecrets.entries()) {
+    if (now - entry.createdAt > PENDING_TOTP_TTL_MS) pendingTotpSecrets.delete(userId);
+  }
+}, 5 * 60 * 1000);
+
 router.use(authLimiter);
 
 /* ══════════════════════════════════════════════════════════════
@@ -3814,8 +3830,12 @@ router.get("/2fa/setup", async (req, res) => {
   const label = user.email ?? user.phone ?? user.name ?? auth.userId;
   const uri = getTotpUri(secret, label);
 
+  /* Two-phase setup: store the secret in memory only (NOT in the database).
+     The DB write happens in /auth/2fa/verify-setup only after the user
+     successfully verifies their first TOTP code. This prevents an unverified
+     secret from persisting in the DB when the user abandons setup. */
   const encryptedSecret = encryptTotpSecret(secret);
-  await db.update(usersTable).set({ totpSecret: encryptedSecret, updatedAt: new Date() }).where(eq(usersTable.id, auth.userId));
+  pendingTotpSecrets.set(auth.userId, { secret, encryptedSecret, createdAt: Date.now() });
 
   let qrDataUrl: string | null = null;
   try { qrDataUrl = await generateQRCodeDataURL(secret, label); } catch (err) { logger.error("[2fa/setup] QR code generation failed:", err); }
@@ -3844,12 +3864,22 @@ router.post("/2fa/verify-setup", async (req, res) => {
     res.status(403).json({ error: "Two-factor authentication is currently disabled" }); return;
   }
   if (user.totpEnabled) { res.status(409).json({ error: "2FA is already enabled" }); return; }
-  if (!user.totpSecret) { res.status(400).json({ error: "Please call /auth/2fa/setup first" }); return; }
 
-  const secret = decryptTotpSecret(user.totpSecret);
+  /* Two-phase setup: read pending secret from the in-memory map (set by /auth/2fa/setup).
+     If not found the setup step was never called (or the TTL expired). */
+  const pendingEntry = pendingTotpSecrets.get(auth.userId);
+  if (!pendingEntry) {
+    res.status(400).json({ error: "Please call /auth/2fa/setup first (setup session expired or not started)" }); return;
+  }
+
+  const secret = pendingEntry.secret;
   if (!verifyTotpToken(code, secret)) {
     res.status(401).json({ error: "Invalid TOTP code. Please try again." }); return;
   }
+
+  /* Verification succeeded — now write the encrypted secret to the database. */
+  await db.update(usersTable).set({ totpSecret: pendingEntry.encryptedSecret, updatedAt: new Date() }).where(eq(usersTable.id, auth.userId));
+  pendingTotpSecrets.delete(auth.userId);
 
   /* Generate 8 single-use recovery codes and store them as individual rows in
      totp_recovery_codes (bcrypt-hashed). We delete any stale rows from a previous
@@ -3908,12 +3938,23 @@ router.post("/totp/enable", async (req, res) => {
     res.status(403).json({ error: "Two-factor authentication is currently disabled" }); return;
   }
   if (user.totpEnabled) { res.status(409).json({ error: "2FA is already enabled" }); return; }
-  if (!user.totpSecret) { res.status(400).json({ error: "Please call /auth/2fa/setup first to obtain a TOTP secret" }); return; }
 
-  const secret = decryptTotpSecret(user.totpSecret);
+  /* Two-phase setup: read pending secret from the in-memory map (set by /auth/2fa/setup).
+     This is the canonical enable endpoint — the DB write only happens here after
+     the user verifies their first code, never during setup. */
+  const pendingEntryEnable = pendingTotpSecrets.get(auth.userId);
+  if (!pendingEntryEnable) {
+    res.status(400).json({ error: "Please call /auth/2fa/setup first to obtain a TOTP secret (setup session expired or not started)" }); return;
+  }
+
+  const secret = pendingEntryEnable.secret;
   if (!verifyTotpToken(code, secret)) {
     res.status(401).json({ error: "Invalid TOTP code. Please try again." }); return;
   }
+
+  /* Verification succeeded — write encrypted secret to the database now. */
+  await db.update(usersTable).set({ totpSecret: pendingEntryEnable.encryptedSecret, updatedAt: new Date() }).where(eq(usersTable.id, auth.userId));
+  pendingTotpSecrets.delete(auth.userId);
 
   /* Generate 8 single-use recovery codes and store them as individual rows in
      totp_recovery_codes (bcrypt-hashed). Delete any stale rows from a previous
