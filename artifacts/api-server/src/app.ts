@@ -3,7 +3,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import pinoHttp from "pino-http";
-import { pinoInstance } from "./lib/logger.js";
+import { pinoInstance, logger } from "./lib/logger.js";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
@@ -11,7 +11,8 @@ import { fileURLToPath } from "url";
 import { runSqlMigrations } from "./services/sqlMigrationRunner.js";
 import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
-import { DEFAULT_PLATFORM_SETTINGS } from "./routes/admin-shared.js";
+import { DEFAULT_PLATFORM_SETTINGS, getCachedSettings } from "./routes/admin-shared.js";
+import { sendAdminAlert } from "./services/email.js";
 import {
   seedPermissionCatalog,
   seedDefaultRoles,
@@ -164,11 +165,57 @@ export async function runStartupTasks(): Promise<void> {
   try {
     const driftReport = await checkSchemaDrift();
     if (!driftReport.ok) {
-      console.warn(
-        `[startup] schema drift detected — ${driftReport.missingTables.length} missing table(s), ` +
-        `${driftReport.columnDrift.filter(d => d.missingInDb.length > 0).length} column gap(s). ` +
-        "Run 'pnpm drizzle-kit push' to apply pending migrations.",
-      );
+      logger.warn(driftReport, "[startup] schema drift detected");
+
+      // Build a clear email body with actionable ALTER TABLE commands.
+      const hostname = process.env["HOST"] ?? process.env["HOSTNAME"] ?? "unknown-host";
+      const timestamp = new Date().toISOString();
+      const columnGaps = driftReport.columnDrift.filter(d => d.missingInDb.length > 0);
+
+      const missingTableLines = driftReport.missingTables.length > 0
+        ? driftReport.missingTables.map(t => `  • ${t}`).join("\n")
+        : "  (none)";
+
+      const columnGapLines = columnGaps.length > 0
+        ? columnGaps.map(d =>
+            `  Table: ${d.table}\n` +
+            d.missingInDb.map(col =>
+              `    ALTER TABLE "${d.table}" ADD COLUMN "${col}" TEXT;`
+            ).join("\n")
+          ).join("\n\n")
+        : "  (none)";
+
+      const htmlBody = `
+        <h2>Schema Drift Detected on Startup</h2>
+        <p><strong>Server:</strong> ${hostname}<br/>
+        <strong>Detected at:</strong> ${timestamp}</p>
+
+        <h3>Missing Tables (${driftReport.missingTables.length})</h3>
+        <pre>${missingTableLines}</pre>
+
+        <h3>Missing Columns (${columnGaps.length} table(s) affected)</h3>
+        <pre>${columnGapLines}</pre>
+
+        <p>Run <code>pnpm drizzle-kit push</code> to apply pending migrations.</p>
+      `.trim();
+
+      getCachedSettings()
+        .then(settings =>
+          sendAdminAlert(
+            "schema_drift",
+            `[AJKMart] Schema drift detected — ${driftReport.missingTables.length} missing table(s), ${columnGaps.length} column gap(s)`,
+            htmlBody,
+            settings,
+          )
+        )
+        .then(result => {
+          if (result.sent) {
+            logger.info("[startup] schema drift alert sent");
+          }
+        })
+        .catch(err => {
+          console.error("[startup] schema drift alert email failed (non-fatal):", err);
+        });
     } else {
       console.log(`[startup] schema drift check passed (${driftReport.totalSchemaTables} tables checked)`);
     }

@@ -278,7 +278,8 @@ export type AdminAlertType =
   | "health_critical"
   | "data_export"
   | "security_pattern"
-  | "sentry_new_issue";
+  | "sentry_new_issue"
+  | "schema_drift";
 
 export async function sendAdminAlert(
   alertType: AdminAlertType,
