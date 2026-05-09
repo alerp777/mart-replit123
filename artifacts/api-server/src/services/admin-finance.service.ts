@@ -17,9 +17,10 @@ import {
   ordersTable,
   ridesTable,
 } from "@workspace/db/schema";
-import { eq, desc, sum } from "drizzle-orm";
+import { eq, desc, sum, and, sql } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { logger } from "../lib/logger.js";
+import { getPlatformSettings } from "../routes/admin-shared.js";
 
 export interface WalletTopupInput {
   userId: string;
@@ -73,38 +74,63 @@ export class FinanceService {
       throw new Error("Topup amount must be positive");
     }
 
-    const [user] = await db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.id, input.userId))
-      .limit(1);
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    const currentBalance = parseFloat(user.walletBalance || "0");
-    const newBalance = currentBalance + input.amount;
+    const settings = await getPlatformSettings();
+    const maxBalance = parseFloat(settings["wallet_max_balance"] ?? "50000");
 
     const transactionId = generateId();
-    const now = new Date();
+    const amtFixed = input.amount.toFixed(2);
 
-    // Create transaction record
-    await db.insert(walletTransactionsTable).values({
-      id: transactionId,
-      userId: input.userId,
-      amount: input.amount.toString(),
-      type: "credit",
-      description: `Topup via ${input.paymentMethod}`,
-      reference: input.reference || null,
-      paymentMethod: input.paymentMethod,
+    const newBalance = await db.transaction(async (tx) => {
+      const [user] = await tx
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.id, input.userId))
+        .limit(1)
+        .for("update");
+
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      const currentBalance = parseFloat(user.walletBalance || "0");
+      if (currentBalance + input.amount > maxBalance) {
+        throw new Error(
+          `Wallet balance limit is Rs. ${maxBalance}. Current: Rs. ${currentBalance}`
+        );
+      }
+
+      const [updated] = await tx
+        .update(usersTable)
+        .set({
+          walletBalance: sql`wallet_balance + ${amtFixed}`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(usersTable.id, input.userId),
+            sql`CAST(wallet_balance AS numeric) + ${input.amount} <= ${maxBalance}`
+          )
+        )
+        .returning({ walletBalance: usersTable.walletBalance });
+
+      if (!updated) {
+        throw new Error(
+          `Wallet balance limit is Rs. ${maxBalance}. Top-up would exceed the limit.`
+        );
+      }
+
+      await tx.insert(walletTransactionsTable).values({
+        id: transactionId,
+        userId: input.userId,
+        amount: amtFixed,
+        type: "credit",
+        description: `Topup via ${input.paymentMethod}`,
+        reference: input.reference || null,
+        paymentMethod: input.paymentMethod,
+      });
+
+      return parseFloat(updated.walletBalance || "0");
     });
-
-    // Update user wallet
-    await db
-      .update(usersTable)
-      .set({ walletBalance: newBalance.toString(), updatedAt: now })
-      .where(eq(usersTable.id, input.userId));
 
     logger.info(
       { userId: input.userId, amount: input.amount, newBalance },
@@ -126,45 +152,72 @@ export class FinanceService {
       throw new Error("Transaction amount must be positive");
     }
 
-    const [user] = await db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.id, input.userId))
-      .limit(1);
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    const currentBalance = parseFloat(user.walletBalance || "0");
-
-    if (input.type === "debit" && currentBalance < input.amount) {
-      throw new Error("Insufficient wallet balance");
-    }
-
-    const newBalance =
-      input.type === "credit"
-        ? currentBalance + input.amount
-        : currentBalance - input.amount;
-
     const transactionId = generateId();
-    const now = new Date();
+    const amtFixed = input.amount.toFixed(2);
 
-    // Create transaction record
-    await db.insert(walletTransactionsTable).values({
-      id: transactionId,
-      userId: input.userId,
-      amount: input.amount.toString(),
-      type: input.type,
-      description: input.reason,
-      reference: input.reference || null,
+    const newBalance = await db.transaction(async (tx) => {
+      const [user] = await tx
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.id, input.userId))
+        .limit(1)
+        .for("update");
+
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      let updated: { walletBalance: string | null } | undefined;
+
+      if (input.type === "debit") {
+        const currentBalance = parseFloat(user.walletBalance || "0");
+        if (currentBalance < input.amount) {
+          throw new Error("Insufficient wallet balance");
+        }
+
+        [updated] = await tx
+          .update(usersTable)
+          .set({
+            walletBalance: sql`wallet_balance - ${amtFixed}`,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(usersTable.id, input.userId),
+              sql`CAST(wallet_balance AS numeric) >= ${input.amount}`
+            )
+          )
+          .returning({ walletBalance: usersTable.walletBalance });
+
+        if (!updated) {
+          throw new Error("Insufficient wallet balance at time of processing (possible concurrent request).");
+        }
+      } else {
+        [updated] = await tx
+          .update(usersTable)
+          .set({
+            walletBalance: sql`wallet_balance + ${amtFixed}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(usersTable.id, input.userId))
+          .returning({ walletBalance: usersTable.walletBalance });
+
+        if (!updated) {
+          throw new Error("User not found");
+        }
+      }
+
+      await tx.insert(walletTransactionsTable).values({
+        id: transactionId,
+        userId: input.userId,
+        amount: amtFixed,
+        type: input.type,
+        description: input.reason,
+        reference: input.reference || null,
+      });
+
+      return parseFloat(updated.walletBalance || "0");
     });
-
-    // Update user wallet
-    await db
-      .update(usersTable)
-      .set({ walletBalance: newBalance.toString(), updatedAt: now })
-      .where(eq(usersTable.id, input.userId));
 
     logger.info(
       { userId: input.userId, type: input.type, amount: input.amount, newBalance },
@@ -186,17 +239,7 @@ export class FinanceService {
       throw new Error("Refund amount must be positive");
     }
 
-    const [user] = await db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.id, input.userId))
-      .limit(1);
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    // Verify order or ride exists and belongs to user
+    // Verify order or ride exists and belongs to user — read-only lookups, outside transaction
     if (input.orderId) {
       const [order] = await db
         .select()
@@ -221,27 +264,45 @@ export class FinanceService {
       }
     }
 
-    const currentBalance = parseFloat(user.walletBalance || "0");
-    const newBalance = currentBalance + input.amount;
-
     const transactionId = generateId();
-    const now = new Date();
+    const amtFixed = input.amount.toFixed(2);
 
-    // Create refund transaction
-    await db.insert(walletTransactionsTable).values({
-      id: transactionId,
-      userId: input.userId,
-      amount: input.amount.toString(),
-      type: "credit",
-      description: `Refund: ${input.reason}`,
-      reference: input.orderId || input.rideId || null,
+    const newBalance = await db.transaction(async (tx) => {
+      const [user] = await tx
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.id, input.userId))
+        .limit(1)
+        .for("update");
+
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      const [updated] = await tx
+        .update(usersTable)
+        .set({
+          walletBalance: sql`wallet_balance + ${amtFixed}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(usersTable.id, input.userId))
+        .returning({ walletBalance: usersTable.walletBalance });
+
+      if (!updated) {
+        throw new Error("User not found");
+      }
+
+      await tx.insert(walletTransactionsTable).values({
+        id: transactionId,
+        userId: input.userId,
+        amount: amtFixed,
+        type: "credit",
+        description: `Refund: ${input.reason}`,
+        reference: input.orderId || input.rideId || null,
+      });
+
+      return parseFloat(updated.walletBalance || "0");
     });
-
-    // Update user wallet
-    await db
-      .update(usersTable)
-      .set({ walletBalance: newBalance.toString(), updatedAt: now })
-      .where(eq(usersTable.id, input.userId));
 
     logger.info(
       { userId: input.userId, amount: input.amount, reason: input.reason },

@@ -357,20 +357,34 @@ router.post("/riders/:id/payout", async (req, res) => {
   if (currentBal < amt) {
     sendValidationError(res, `Insufficient wallet balance (Rs. ${currentBal.toFixed(0)})`); return;
   }
-  /* Atomic deduction: WHERE wallet_balance >= amt prevents race condition where
-     two concurrent payout requests both read the same balance and double-deduct. */
-  const [updated] = await db.update(usersTable)
-    .set({ walletBalance: sql`wallet_balance - ${amt}`, updatedAt: new Date() })
-    .where(and(eq(usersTable.id, rider.id), sql`CAST(wallet_balance AS NUMERIC) >= ${amt}`))
-    .returning();
-  if (!updated) {
-    sendValidationError(res, "Payout failed: insufficient balance at time of processing (possible concurrent request)."); return;
+  let updated: typeof usersTable.$inferSelect | undefined;
+  try {
+    updated = await db.transaction(async (tx) => {
+      /* Atomic deduction + log in one transaction: WHERE wallet_balance >= amt prevents
+         double-deduct from concurrent requests; INSERT inside the same tx ensures the
+         audit trail is never lost if the log write fails. */
+      const [txUpdated] = await tx.update(usersTable)
+        .set({ walletBalance: sql`wallet_balance - ${amt}`, updatedAt: new Date() })
+        .where(and(eq(usersTable.id, rider.id), sql`CAST(wallet_balance AS NUMERIC) >= ${amt}`))
+        .returning();
+      if (!txUpdated) {
+        throw new Error("Payout failed: insufficient balance at time of processing (possible concurrent request).");
+      }
+      await tx.insert(walletTransactionsTable).values({
+        id: generateId(), userId: rider.id, type: "debit", amount: String(amt),
+        description: description || `Rider payout: Rs. ${amt}`, reference: "rider_payout",
+      });
+      return txUpdated;
+    });
+  } catch (e: unknown) {
+    const msg = (e as Error).message ?? "";
+    if (msg.startsWith("Payout failed")) {
+      sendValidationError(res, msg); return;
+    }
+    logger.error("[riders payout] Transaction error:", e);
+    sendError(res, "Something went wrong, please try again.", 500); return;
   }
   const newBal = parseFloat(updated.walletBalance ?? "0");
-  await db.insert(walletTransactionsTable).values({
-    id: generateId(), userId: rider.id, type: "debit", amount: String(amt),
-    description: description || `Rider payout: Rs. ${amt}`, reference: "rider_payout",
-  });
   await sendUserNotification(rider.id, "Earnings Paid Out 💵", `Rs. ${amt} has been paid out to your account.`, "system", "cash-outline");
   sendSuccess(res, { amount: amt, newBalance: newBal, rider: { ...updated, walletBalance: newBal } });
 });
