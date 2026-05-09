@@ -1,7 +1,27 @@
 import jwt from 'jsonwebtoken';
+import { logger } from '../lib/logger.js';
 
-const ACCESS_TOKEN_SECRET = process.env.ADMIN_ACCESS_TOKEN_SECRET || 'dev_access_secret_change_in_production';
-const REFRESH_TOKEN_SECRET = process.env.ADMIN_REFRESH_TOKEN_SECRET || 'dev_refresh_secret_change_in_production';
+function resolveSecret(envVar: string, name: string): string {
+  const val = process.env[envVar];
+  if (!val || val.length < 32) {
+    const msg = !val
+      ? `[ADMIN JWT] FATAL: ${envVar} is not set. Minimum 32 characters required.`
+      : `[ADMIN JWT] FATAL: ${envVar} too short (${val.length} chars, need ≥32).`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.fatal(msg);
+      process.exit(1);
+    }
+    logger.warn(
+      `[ADMIN JWT] WARNING: ${envVar} is not set or too short. ` +
+      `Using unsafe dev fallback — set a strong secret before deploying to production.`,
+    );
+    return (val ?? '') + 'dev_fallback_pad_to_32_chars_min!!';
+  }
+  return val;
+}
+
+const ACCESS_TOKEN_SECRET  = resolveSecret('ADMIN_ACCESS_TOKEN_SECRET',  'ADMIN_ACCESS_TOKEN_SECRET');
+const REFRESH_TOKEN_SECRET = resolveSecret('ADMIN_REFRESH_TOKEN_SECRET', 'ADMIN_REFRESH_TOKEN_SECRET');
 const JWT_ISSUER = process.env.JWT_ISSUER || 'ajkmart-admin';
 
 export interface AccessTokenPayload {

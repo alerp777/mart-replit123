@@ -41,6 +41,7 @@ import {
 import { eq } from "drizzle-orm";
 import { logAdminAudit } from "../middleware/admin-audit.js";
 import { sendAdminPasswordOutOfBandResetEmail } from "./email.js";
+import { logger } from "../lib/logger.js";
 
 /** sha256 of the bcrypt secret — keeps the snapshot table cheap to scan
  *  and one extra hop away from the actual hash. */
@@ -85,9 +86,9 @@ export async function recordAdminPasswordSnapshot(input: {
         },
       });
   } catch (err) {
-    console.error(
-      `[admin-password-watch] failed to record snapshot for ${input.adminId}:`,
-      err,
+    logger.error(
+      { adminId: input.adminId, err },
+      "[admin-password-watch] failed to record snapshot",
     );
   }
 }
@@ -133,16 +134,17 @@ async function notifyOutOfBandAdminPasswordReset(
       result.emailed = sendResult.sent;
       if (!sendResult.sent) result.emailReason = sendResult.reason;
     } catch (err) {
-      console.error(
-        `[admin-password-watch] email throw for ${admin.id}:`,
-        err,
+      logger.error(
+        { adminId: admin.id, err },
+        "[admin-password-watch] email throw",
       );
       result.emailReason = (err as Error).message;
     }
   } else {
     result.emailReason = "Admin has no email address on file";
-    console.warn(
-      `[admin-password-watch] cannot notify ${admin.id} — no email address`,
+    logger.warn(
+      { adminId: admin.id },
+      "[admin-password-watch] cannot notify admin — no email address",
     );
   }
 
@@ -196,9 +198,9 @@ export async function detectAndNotifyOutOfBandPasswordResets(): Promise<Watchdog
   try {
     admins = await db.select().from(adminAccountsTable);
   } catch (err) {
-    console.error(
-      "[admin-password-watch] failed to load admin_accounts — skipping run:",
-      err,
+    logger.error(
+      { err },
+      "[admin-password-watch] failed to load admin_accounts — skipping run",
     );
     return summary;
   }
@@ -260,20 +262,22 @@ export async function detectAndNotifyOutOfBandPasswordResets(): Promise<Watchdog
         })
         .where(eq(adminPasswordHashSnapshotsTable.adminId, admin.id));
     } catch (err) {
-      console.error(
-        `[admin-password-watch] check failed for ${admin.id}:`,
-        err,
+      logger.error(
+        { adminId: admin.id, err },
+        "[admin-password-watch] check failed for admin",
       );
     }
   }
 
   if (summary.outOfBand.length > 0) {
-    console.warn(
-      `[admin-password-watch] ⚠ detected ${summary.outOfBand.length} out-of-band password reset(s) — affected admins notified`,
+    logger.warn(
+      { count: summary.outOfBand.length },
+      "[admin-password-watch] detected out-of-band password reset(s) — affected admins notified",
     );
   } else {
-    console.log(
-      `[admin-password-watch] scanned=${summary.scanned} verified=${summary.verified} new=${summary.newSnapshots}`,
+    logger.info(
+      { scanned: summary.scanned, verified: summary.verified, newSnapshots: summary.newSnapshots },
+      "[admin-password-watch] watchdog run complete",
     );
   }
 

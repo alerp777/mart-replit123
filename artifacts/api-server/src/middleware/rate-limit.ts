@@ -14,10 +14,12 @@
  *   authLimiter        20 req / 15 min  — OTP / login / social-auth (legacy guard)
  *   adminAuthLimiter   10 req / 15 min  — admin login & password-reset
  *   paymentLimiter     30 req / 15 min  — wallet & payment routes
+ *   publicLimiter      60 req / 15 min  — public scraping-prone endpoints
  */
 import rateLimit, { type Options, type Store } from "express-rate-limit";
 import { RedisStore } from "rate-limit-redis";
 import { redisClient } from "../lib/redis.js";
+import { logger } from "../lib/logger.js";
 import type { Request } from "express";
 
 function makeStore(prefix: string): Store | undefined {
@@ -28,21 +30,21 @@ function makeStore(prefix: string): Store | undefined {
       sendCommand: (...args: string[]) => {
         return (redisClient!.call as (...a: string[]) => Promise<unknown>)(...args).catch((err: Error) => {
           if (!err.message.includes("closed")) {
-            console.error(`[rate-limit:${prefix}] Redis error:`, err.message);
+            logger.error({ prefix, err: err.message }, "[rate-limit] Redis error");
           }
           throw err;
         }) as ReturnType<import("rate-limit-redis").SendCommandFn>;
       },
     });
   } catch (err) {
-    console.error(`[rate-limit] Could not create Redis store for "${prefix}":`, err);
+    logger.error({ prefix, err }, "[rate-limit] Could not create Redis store");
     return undefined;
   }
 }
 
 function makeOptions(prefix: string, max: number, windowMs: number, extra?: Partial<Options>): Partial<Options> {
   const store = makeStore(prefix);
-  console.log(`[rate-limit] "${prefix}" limiter → ${store ? "Redis" : "in-memory"} store`);
+  logger.info({ prefix, store: store ? "Redis" : "in-memory" }, `[rate-limit] limiter configured`);
   return {
     windowMs,
     max,
@@ -69,6 +71,13 @@ export const globalLimiter    = rateLimit(makeOptions("global",     300, WINDOW_
 export const authLimiter      = rateLimit(makeOptions("auth",        20, WINDOW_15_MIN));
 export const adminAuthLimiter = rateLimit(makeOptions("admin-auth",  10, WINDOW_15_MIN));
 export const paymentLimiter   = rateLimit(makeOptions("payment",     30, WINDOW_15_MIN));
+
+/**
+ * publicLimiter — 60 req / 15 min for public, scraping-prone endpoints.
+ * Applied to banners, categories, products, promotions/public,
+ * recommendations, public-vendors, and deep-links endpoints.
+ */
+export const publicLimiter = rateLimit(makeOptions("public", 60, WINDOW_15_MIN));
 
 /* ── New tight limiters (1-minute windows) ───────────────────────────── */
 
@@ -108,11 +117,10 @@ export const otpLimiter = rateLimit(makeOptions("otp", 3, WINDOW_1_MIN, {
 export const userApiLimiter = rateLimit(makeOptions("user-api", 100, WINDOW_1_MIN, {
   keyGenerator: (req: Request) => {
     const userId =
-      (req as any).userId ??
-      (req as any).customerId ??
-      (req as any).riderId ??
-      (req as any).vendorId ??
-      (req as any).user?.id;
+      req.userId ??
+      req.customerId ??
+      req.riderId ??
+      req.vendorId;
     if (userId) return `user:${userId}`;
     return (
       (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||

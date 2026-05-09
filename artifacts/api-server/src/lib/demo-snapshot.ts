@@ -1,6 +1,7 @@
 import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { logger } from "./logger.js";
 
 export async function isDemoMode(): Promise<boolean> {
   try {
@@ -46,7 +47,7 @@ export async function setDemoMode(enabled: boolean) {
     }
     return { success: true };
   } catch (err) {
-    console.error("setDemoMode error:", err);
+    logger.error({ err }, "[demo-snapshot] setDemoMode error");
     return { success: false, error: String(err) };
   }
 }

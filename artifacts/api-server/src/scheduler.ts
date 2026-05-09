@@ -12,7 +12,7 @@ import {
 import { sql, lt, isNotNull, or } from "drizzle-orm";
 import { logger } from "./lib/logger.js";
 import { purgeExpiredIdempotencyKeys } from "./lib/cleanupIdempotencyKeys.js";
-import { stopDispatchEngine } from "./routes/rides/dispatch.js";
+import { startDispatchEngine, stopDispatchEngine } from "./routes/rides/dispatch.js";
 
 /* ══════════════════════════════════════════════════════════════════════════
    scheduler.ts
@@ -186,7 +186,8 @@ export function startScheduler(): void {
   register("user-session-cleanup",      purgeExpiredUserSessions,     60 * 60_000);
   register("live-location-cleanup",     purgeStaleLocations,          30 * 60_000);
   register("login-history-archival",    archiveOldLoginHistory,       24 * 60 * 60_000);
-  logger.info({ jobs: ALL_JOBS }, "[scheduler] started");
+  startDispatchEngine();
+  logger.info({ jobs: ALL_JOBS }, "[scheduler] started (dispatch engine active)");
 }
 
 export function stopScheduler(): void {

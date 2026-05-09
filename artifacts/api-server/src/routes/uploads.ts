@@ -12,12 +12,29 @@ import { customerAuth, riderAuth, requireRole, getCachedSettings } from "../midd
 import { db } from "@workspace/db";
 import { pharmacyPrescriptionRefsTable } from "@workspace/db/schema";
 import { generateId } from "../lib/id.js";
+import { logger } from "../lib/logger.js";
 
 const execFileAsync = promisify(execFile);
 
 const router: IRouter = Router();
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "uploads");
+
+/* ── Production disk-storage warning ────────────────────────────────────────
+   Files are stored on local disk inside ./uploads/. This works for
+   development but is NOT suitable for production: the directory is not
+   shared across instances, files are lost on container restart, and the
+   container has limited disk space. Configure an object-storage backend
+   (S3-compatible: set STORAGE_BUCKET_URL + STORAGE_ACCESS_KEY +
+   STORAGE_SECRET_KEY) before deploying to production. */
+if (process.env.NODE_ENV === "production" && !process.env["STORAGE_BUCKET_URL"]) {
+  logger.warn(
+    "[uploads] WARNING: Running in production with local disk storage. " +
+    "Files stored in ./uploads/ will be lost on container restart and are " +
+    "not shared across instances. Set STORAGE_BUCKET_URL to use S3-compatible " +
+    "object storage before going live.",
+  );
+}
 
 const DEFAULT_MAX_IMAGE_MB = 5;
 const DEFAULT_MAX_VIDEO_MB = 50;

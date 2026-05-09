@@ -53,6 +53,23 @@ import { isAuthMethodEnabled, isAuthMethodEnabledStrict } from "@workspace/auth-
 import { validateBody as sharedValidateBody } from "../../middleware/validate.js";
 import { authLimiter, loginLimiter, otpLimiter } from "../../middleware/rate-limit.js";
 import { SendOtpSchema, VerifyOtpSchema, UserLoginSchema } from "../../lib/validation/schemas.js";
+import {
+  RIDER_REFRESH_COOKIE,
+  RIDER_REFRESH_COOKIE_PATH,
+  VENDOR_REFRESH_COOKIE,
+  VENDOR_REFRESH_COOKIE_PATH,
+  hashOtp,
+  normalizeVehicleTypeForStorage,
+  generateVerificationToken,
+  hashVerificationToken,
+  isValidCanonicalPhone,
+  isRiderSession,
+  shouldUseSecureCookie,
+  setRiderRefreshCookie,
+  clearRiderRefreshCookie,
+  setVendorRefreshCookie,
+  clearVendorRefreshCookie,
+} from "./helpers.js";
 
 /* OTP rate limiting is handled per-account + per-IP inside the route handler
    using the admin-configurable settings (security_otp_max_per_phone,
@@ -90,61 +107,6 @@ const loginSchema = UserLoginSchema;
    This schema is kept minimal — the body field is not accepted. */
 const refreshTokenSchema = z.object({}).strip();
 
-/* ── Rider refresh-token cookie ──────────────────────────────────────────────
-   HttpOnly + SameSite=Strict cookie that carries the refresh token for the
-   rider web client. Path is scoped to `/api/auth` so it is only sent to refresh
-   and logout endpoints. We deliberately gate cookie issuance to rider sessions
-   only, so customer/vendor flows are not affected.
-
-   `isRiderSession` checks BOTH the user object roles AND the request body
-   `role` field — the latter handles the OTP/login pre-issuance case where the
-   client signals which app it is logging into. */
-const RIDER_REFRESH_COOKIE = "ajkmart_rider_refresh";
-const RIDER_REFRESH_COOKIE_PATH = "/api/auth";
-
-function isRiderSession(req: Request, user?: { role?: string | null; roles?: string | null } | null): boolean {
-  const body: Record<string, unknown> = (req.body && typeof req.body === "object")
-    ? (req.body as Record<string, unknown>)
-    : {};
-  const bodyRoleRaw = body.role;
-  const bodyRole = typeof bodyRoleRaw === "string" ? bodyRoleRaw : undefined;
-  if (bodyRole === "rider") return true;
-  const rolesStr = (user?.roles ?? user?.role ?? "") as string;
-  if (!rolesStr) return false;
-  return rolesStr.split(",").map((r) => r.trim()).includes("rider");
-}
-
-function shouldUseSecureCookie(): boolean {
-  return process.env.NODE_ENV === "production" || !!process.env.REPLIT_DEV_DOMAIN;
-}
-
-function setRiderRefreshCookie(req: Request, res: Response, refreshRaw: string, user?: { role?: string | null; roles?: string | null } | null): void {
-  if (!isRiderSession(req, user)) return;
-  res.cookie(RIDER_REFRESH_COOKIE, refreshRaw, {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: shouldUseSecureCookie(),
-    path: RIDER_REFRESH_COOKIE_PATH,
-    maxAge: getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000,
-  });
-}
-
-function clearRiderRefreshCookie(res: Response): void {
-  res.clearCookie(RIDER_REFRESH_COOKIE, {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: shouldUseSecureCookie(),
-    path: RIDER_REFRESH_COOKIE_PATH,
-  });
-}
-
-/* ── Vendor refresh-token cookie ─────────────────────────────────────────────
-   Mirrors the rider cookie pattern. HttpOnly + SameSite=Strict cookie that
-   carries the refresh token for the vendor web client. Path is scoped to
-   `/api/auth` so it is only sent to refresh and logout endpoints. */
-const VENDOR_REFRESH_COOKIE      = "ajkmart_vendor_refresh";
-const VENDOR_REFRESH_COOKIE_PATH = "/api/auth";
-
 function isVendorSession(req: Request, user?: { role?: string | null; roles?: string | null } | null): boolean {
   const body: Record<string, unknown> = (req.body && typeof req.body === "object")
     ? (req.body as Record<string, unknown>)
@@ -154,26 +116,6 @@ function isVendorSession(req: Request, user?: { role?: string | null; roles?: st
   const rolesStr = (user?.roles ?? user?.role ?? "") as string;
   if (!rolesStr) return false;
   return rolesStr.split(",").map((r) => r.trim()).includes("vendor");
-}
-
-function setVendorRefreshCookie(req: Request, res: Response, refreshRaw: string, user?: { role?: string | null; roles?: string | null } | null): void {
-  if (!isVendorSession(req, user)) return;
-  res.cookie(VENDOR_REFRESH_COOKIE, refreshRaw, {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: shouldUseSecureCookie(),
-    path: VENDOR_REFRESH_COOKIE_PATH,
-    maxAge: getRefreshTokenTtlDays() * 24 * 60 * 60 * 1000,
-  });
-}
-
-function clearVendorRefreshCookie(res: Response): void {
-  res.clearCookie(VENDOR_REFRESH_COOKIE, {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: shouldUseSecureCookie(),
-    path: VENDOR_REFRESH_COOKIE_PATH,
-  });
 }
 
 const forgotPasswordSchema = z.object({
@@ -211,10 +153,6 @@ const registerSchema = z.object({
   captchaToken: z.string().optional(),
 }).strip();
 
-function hashOtp(otp: string): string {
-  return createHash("sha256").update(otp).digest("hex");
-}
-
 /** Encrypt a PII string when ENCRYPTION_MASTER_KEY is available; returns null silently if not. */
 function tryEncrypt(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -238,37 +176,6 @@ function decryptPii(encrypted: string | null | undefined, plaintext: string | nu
   return plaintext ?? null;
 }
 
-function normalizeVehicleTypeForStorage(raw: string): string {
-  const v = raw.trim().toLowerCase();
-  if (!v) return raw;
-  if (v === "bike" || v.startsWith("bike") || v.includes("motorcycle")) return "bike";
-  if (v === "car") return "car";
-  if (v === "rickshaw" || v.includes("rickshaw") || v.includes("qingqi")) return "rickshaw";
-  if (v === "van") return "van";
-  if (v === "daba") return "daba";
-  if (v === "bicycle") return "bicycle";
-  if (v === "on_foot" || v === "on foot") return "on_foot";
-  return v;
-}
-
-function generateVerificationToken(): string {
-  return randomBytes(32).toString("hex");
-}
-
-function hashVerificationToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-
-async function isValidCanonicalPhone(phone: string): Promise<boolean> {
-  try {
-    const s = await getCachedSettings();
-    const pattern = s["regional_phone_format"] ?? "^0?3\\d{9}$";
-    return new RegExp(pattern).test(phone);
-  } catch {
-    return /^3\d{9}$/.test(phone);
-  }
-}
 
 const router: IRouter = Router();
 

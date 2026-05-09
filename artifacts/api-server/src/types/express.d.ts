@@ -23,6 +23,12 @@ declare global {
       ride?: InferSelectModel<typeof ridesTable>;
       admin?: { id: string; [key: string]: unknown };
       rawBody?: Buffer;
+      /** Set by requireRole / customerAuth / riderAuth / vendorAuth middleware */
+      userId?: string;
+      userPhone?: string;
+      userRole?: string;
+      userRoles?: string[];
+      tokenVersion?: number;
     }
   }
 }

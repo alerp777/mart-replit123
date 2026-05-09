@@ -9,6 +9,12 @@ export const pinoInstance = pino({
     "req.headers.authorization",
     "req.headers.cookie",
     "res.headers['set-cookie']",
+    "req.body.phone",
+    "req.body.password",
+    "req.body.cnic",
+    "req.body.nationalId",
+    "req.body.email",
+    "req.body.otp",
   ],
   ...(isProduction
     ? {}

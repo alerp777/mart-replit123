@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { pushSubscriptionsTable } from "@workspace/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { sendFcmToTokens } from "./fcm.js";
+import { logger } from "./logger.js";
 
 let vapidInitialized = false;
 
@@ -12,12 +13,12 @@ export function initVapid() {
   const priv = process.env["VAPID_PRIVATE_KEY"] ?? "";
   const mail = process.env["VAPID_CONTACT_EMAIL"] ?? "mailto:admin@ajkmart.app";
   if (!pub || !priv) {
-    console.warn("[webpush] VAPID keys not set — web push disabled");
+    logger.warn("[webpush] VAPID keys not set — web push disabled");
     return;
   }
   webpush.setVapidDetails(mail, pub, priv);
   vapidInitialized = true;
-  console.log("[webpush] VAPID initialized");
+  logger.info("[webpush] VAPID initialized");
 }
 
 export function getVapidPublicKey(): string {
@@ -112,7 +113,7 @@ async function sendPushToSubs(
   if (staleIds.length > 0) {
     await db.delete(pushSubscriptionsTable)
       .where(inArray(pushSubscriptionsTable.id, staleIds))
-      .catch((err: unknown) => { console.error("[webpush] Stale subscription cleanup failed:", err); });
+      .catch((err: unknown) => { logger.error({ err }, "[webpush] Stale subscription cleanup failed"); });
   }
 
   return {
@@ -144,7 +145,7 @@ async function sendVapidSubs(
         if (err?.statusCode === 410 || err?.statusCode === 404) {
           staleIds.push(sub.id);
         } else {
-          console.warn("[webpush] send failed:", err?.message);
+          logger.warn({ err: err?.message }, "[webpush] send failed");
         }
       }
     }),

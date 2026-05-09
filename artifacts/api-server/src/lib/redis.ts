@@ -13,6 +13,7 @@
  *   redisClient  — ioredis instance, or null when REDIS_URL is absent/invalid
  */
 import Redis from "ioredis";
+import { logger } from "./logger.js";
 
 function sanitizeRedisUrl(raw: string): string | null {
   const value = raw.trim().replace(/^["']|["']$/g, "").trim();
@@ -40,7 +41,7 @@ let redisClient: Redis | null = null;
 const rawUrl = process.env["REDIS_URL"];
 
 if (!rawUrl) {
-  console.warn(
+  logger.warn(
     "[redis] REDIS_URL is not set — JWT token blacklisting is DISABLED. " +
     "Logged-out access tokens will remain valid until they expire naturally. " +
     "Set REDIS_URL in the Replit Secrets panel to enable blacklisting."
@@ -57,8 +58,8 @@ if (rawUrl) {
         connectTimeout: 8000,
         retryStrategy: (times) => {
           if (times >= 4) {
-            console.error("[redis] Max reconnect attempts reached — rate limits will use in-memory store");
-            console.warn(
+            logger.error("[redis] Max reconnect attempts reached — rate limits will use in-memory store");
+            logger.warn(
               "[redis] Redis connection failed — JWT token blacklisting is DISABLED. " +
               "Logged-out access tokens will remain valid until they expire naturally."
             );
@@ -68,13 +69,13 @@ if (rawUrl) {
         },
       });
 
-      redisClient.on("connect", () => console.log("[redis] Connected to Redis"));
-      redisClient.on("ready",   () => console.log("[redis] Ready"));
-      redisClient.on("error",   (err: Error) => console.error("[redis] Error:", err.message));
-      redisClient.on("close",   () => console.warn("[redis] Connection closed"));
+      redisClient.on("connect", () => logger.info("[redis] Connected to Redis"));
+      redisClient.on("ready",   () => logger.info("[redis] Ready"));
+      redisClient.on("error",   (err: Error) => logger.error({ err: err.message }, "[redis] Error"));
+      redisClient.on("close",   () => logger.warn("[redis] Connection closed"));
     } catch (err) {
-      console.error("[redis] Failed to initialise client:", (err as Error).message);
-      console.warn(
+      logger.error({ err: (err as Error).message }, "[redis] Failed to initialise client");
+      logger.warn(
         "[redis] Redis init failed — JWT token blacklisting is DISABLED. " +
         "Logged-out access tokens will remain valid until they expire naturally."
       );

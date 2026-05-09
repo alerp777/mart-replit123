@@ -3,6 +3,7 @@ import { Request, Response, NextFunction } from "express";
 import { logger as pinoLogger } from "../lib/logger.js";
 import { randomBytes } from "crypto";
 import { eq } from "drizzle-orm";
+import { redisClient } from "../lib/redis.js";
 import {
   db,
   platformSettingsTable,
@@ -77,27 +78,67 @@ export const DEFAULT_RIDE_SERVICES = [
   { id: "rickshaw", name: "Rickshaw", icon: "car-sport-outline", baseFare: "50", perKm: "12" },
 ];
 
-/* ── IN-MEMORY ADMIN LOGIN LOCKOUT ─────────────────────────────────────── */
+/* ── ADMIN LOGIN LOCKOUT — Redis-backed with in-memory fallback ──────── */
 
-export const adminLoginAttempts = new Map<string, { count: number; lastAttempt: number }>();
+/** In-memory fallback used when Redis is unavailable (lost on restart). */
+const _memAttempts = new Map<string, { count: number; lastAttempt: number }>();
 
+function _memKey(ip: string) { return `admin:lockout:${ip}`; }
+const LOCKOUT_TTL_SEC = ADMIN_LOCKOUT_TIME * 60;
+
+/**
+ * Returns true when the IP has exceeded ADMIN_MAX_ATTEMPTS within the
+ * lockout window. Uses Redis when available, falls back to in-memory.
+ */
 export async function checkAdminLoginLockout(ip: string): Promise<boolean> {
-  const record = adminLoginAttempts.get(ip);
+  if (redisClient) {
+    try {
+      const raw = await redisClient.get(_memKey(ip));
+      if (!raw) return false;
+      const count = parseInt(raw, 10);
+      return count >= ADMIN_MAX_ATTEMPTS;
+    } catch (err) {
+      pinoLogger.warn({ ip, err }, "[admin-shared] Redis lockout check failed — using memory fallback");
+    }
+  }
+  /* in-memory fallback */
+  const record = _memAttempts.get(ip);
   if (!record) return false;
   if (record.count >= ADMIN_MAX_ATTEMPTS) {
     const elapsed = Date.now() - record.lastAttempt;
-    if (elapsed < ADMIN_LOCKOUT_TIME * 60 * 1000) return true;
-    adminLoginAttempts.delete(ip);
+    if (elapsed < LOCKOUT_TTL_SEC * 1000) return true;
+    _memAttempts.delete(ip);
   }
   return false;
 }
 
-export function recordAdminLoginFailure(ip: string): void {
-  const record = adminLoginAttempts.get(ip) || { count: 0, lastAttempt: 0 };
+/**
+ * Increment the failure counter for the IP. The key is given a TTL equal
+ * to the lockout window so Redis auto-expires it once the window passes.
+ */
+export async function recordAdminLoginFailure(ip: string): Promise<void> {
+  if (redisClient) {
+    try {
+      const key = _memKey(ip);
+      const count = await redisClient.incr(key);
+      if (count === 1) {
+        /* First failure — start the TTL clock */
+        await redisClient.expire(key, LOCKOUT_TTL_SEC);
+      }
+      return;
+    } catch (err) {
+      pinoLogger.warn({ ip, err }, "[admin-shared] Redis lockout record failed — using memory fallback");
+    }
+  }
+  /* in-memory fallback */
+  const record = _memAttempts.get(ip) || { count: 0, lastAttempt: 0 };
   record.count += 1;
   record.lastAttempt = Date.now();
-  adminLoginAttempts.set(ip, record);
+  _memAttempts.set(ip, record);
 }
+
+/** Export for backward compatibility with code that checks the map directly. */
+export const adminLoginAttempts = _memAttempts;
 
 /* ── TYPE DEFINITIONS ──────────────────────────────────────────────────── */
 
@@ -319,7 +360,14 @@ export async function verifyTotpToken(token: string, secret: string): Promise<bo
 /* ── RATE LIMITING / SECURITY EVENTS ──────────────────────────────────── */
 
 export async function resetAdminLoginAttempts(ip: string): Promise<void> {
-  adminLoginAttempts.delete(ip);
+  if (redisClient) {
+    try {
+      await redisClient.del(_memKey(ip));
+    } catch (err) {
+      pinoLogger.warn({ ip, err }, "[admin-shared] Redis reset failed — clearing memory fallback");
+    }
+  }
+  _memAttempts.delete(ip);
   pinoLogger.info({ ip }, "[admin-shared] Reset login attempts");
 }
 

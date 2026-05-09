@@ -501,6 +501,29 @@ export function createServer() {
     });
   }
 
+  /* ── Request timeout guard ───────────────────────────────────────────────
+     Requests that hang longer than REQUEST_TIMEOUT_MS (default 30 s) receive
+     a 503 response and the socket is terminated. SSE streams and WebSocket
+     upgrade requests are excluded so long-lived connections work normally. */
+  const REQUEST_TIMEOUT_MS = parseInt(process.env["REQUEST_TIMEOUT_MS"] ?? "30000", 10);
+  app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const isSSE = req.headers["accept"] === "text/event-stream";
+    const isWsUpgrade = req.headers["upgrade"]?.toLowerCase() === "websocket";
+    if (isSSE || isWsUpgrade) { next(); return; }
+
+    const timer = setTimeout(() => {
+      if (!res.headersSent) {
+        logger.warn({ method: req.method, url: req.originalUrl, timeoutMs: REQUEST_TIMEOUT_MS }, "[timeout] Request timed out — returning 503");
+        res.status(503).json({ success: false, error: "Request timeout. Please try again." });
+      }
+    }, REQUEST_TIMEOUT_MS);
+    timer.unref();
+
+    res.on("finish", () => clearTimeout(timer));
+    res.on("close",  () => clearTimeout(timer));
+    next();
+  });
+
   app.use("/api", globalLimiter);
   app.use("/api", suspiciousPatternDetector);
   app.use("/api", router);

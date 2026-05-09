@@ -31,6 +31,7 @@ import { hashAdminSecret } from "./password.js";
 import { generateId } from "../lib/id.js";
 import { logAdminAudit } from "../middleware/admin-audit.js";
 import { recordAdminPasswordSnapshot } from "./admin-password-watch.service.js";
+import { logger } from "../lib/logger.js";
 
 const SUPER_ADMIN_SLUG = "super_admin";
 const DEFAULT_SEED_EMAIL = "admin@ajkmart.local";
@@ -69,9 +70,7 @@ export async function seedDefaultSuperAdmin(): Promise<SeedResult> {
     // Idempotent no-op path. Log explicitly so operators can confirm at boot
     // that seeding ran and decided to leave the existing admin set alone,
     // instead of having to infer it from the absence of a "created" line.
-    console.log(
-      "[admin-seed] skipped — at least one admin account already exists",
-    );
+    logger.info("[admin-seed] skipped — at least one admin account already exists");
     return { created: false };
   }
 
@@ -122,23 +121,20 @@ export async function seedDefaultSuperAdmin(): Promise<SeedResult> {
         .values({ adminId: id, roleId: superRole.id, grantedBy: "system" })
         .onConflictDoNothing();
     } else {
-      console.warn(
+      logger.warn(
         "[admin-seed] super_admin role not found — RBAC seed must run before admin seed for the new admin to receive role assignment",
       );
     }
   } catch (err) {
-    console.error("[admin-seed] failed to assign super_admin role:", err);
+    logger.error({ err }, "[admin-seed] failed to assign super_admin role");
   }
 
   // Surface the bootstrap credentials on first boot so an operator that
   // is bringing the system up for the first time can capture them from
   // the logs. Subsequent boots are no-ops.
-  console.log("[admin-seed] default super-admin created");
-  console.log(`[admin-seed]   email:    ${email}`);
-  console.log(`[admin-seed]   username: ${username}`);
-  console.log("[admin-seed]   password: (default — see ADMIN_SEED_PASSWORD env)");
-  console.log("[admin-seed] ℹ  The SPA will offer an OPTIONAL popup on first login");
-  console.log("[admin-seed]    so the super-admin can customise their credentials.");
+  logger.info({ email, username }, "[admin-seed] default super-admin created");
+  logger.info("[admin-seed] password: (default — see ADMIN_SEED_PASSWORD env)");
+  logger.info("[admin-seed] The SPA will offer an OPTIONAL popup on first login so the super-admin can customise their credentials.");
 
   // Persist a permanent audit-log entry so the seeded super-admin shows up
   // in the same audit trail super-admins use day-to-day. Best-effort: a
@@ -213,10 +209,9 @@ export async function reconcileSeededSuperAdmin(): Promise<{ reset: boolean }> {
     },
   });
 
-  console.log("[admin-seed] seeded super-admin reconciled to default credentials");
-  console.log(`[admin-seed]   username: ${username}`);
-  console.log("[admin-seed]   password: (default — see ADMIN_SEED_PASSWORD env)");
-  console.log("[admin-seed] ℹ  The SPA will surface the optional credentials popup.");
+  logger.info({ username }, "[admin-seed] seeded super-admin reconciled to default credentials");
+  logger.info("[admin-seed] password: (default — see ADMIN_SEED_PASSWORD env)");
+  logger.info("[admin-seed] The SPA will surface the optional credentials popup.");
 
   return { reset: true };
 }

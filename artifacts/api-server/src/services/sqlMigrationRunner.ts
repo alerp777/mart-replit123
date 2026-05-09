@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { buildPgPoolConfig } from "@workspace/db/connection-url";
+import { logger } from "../lib/logger.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,13 +28,13 @@ const __dirname = path.dirname(__filename);
 export async function runSqlMigrations() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
-    console.error("[migrations] DATABASE_URL not set, skipping migrations");
+    logger.error("[migrations] DATABASE_URL not set, skipping migrations");
     return;
   }
   const pool = new Pool(buildPgPoolConfig(databaseUrl));
   try {
     await pool.query("SELECT 1");
-    console.log("[migrations] Database connection successful");
+    logger.info("[migrations] Database connection successful");
 
     // Tracking tables for both migration tracks
     await pool.query(`
@@ -74,17 +75,17 @@ export async function runSqlMigrations() {
         try {
           await pool.query(cleaned);
         } catch (err) {
-          console.error(`[migrations:drizzle] FAILED applying ${file}`, err);
+          logger.error({ file, err }, "[migrations:drizzle] FAILED applying migration");
           throw err;
         }
         await pool.query(
           "INSERT INTO _drizzle_migrations (filename) VALUES ($1)",
           [file]
         );
-        console.log(`[migrations:drizzle] Applied ${file}`);
+        logger.info({ file }, "[migrations:drizzle] Applied migration");
       }
     } else {
-      console.warn("[migrations:drizzle] Drizzle migrations directory not found, skipping");
+      logger.warn("[migrations:drizzle] Drizzle migrations directory not found, skipping");
     }
 
     // ── Track 2: Custom SQL migrations ────────────────────────────────────
@@ -107,14 +108,14 @@ export async function runSqlMigrations() {
         try {
           await pool.query(sql);
         } catch (err) {
-          console.error(`[migrations] FAILED applying ${file}`, err);
+          logger.error({ file, err }, "[migrations] FAILED applying migration");
           throw err;
         }
         await pool.query(
           "INSERT INTO _schema_migrations (filename) VALUES ($1)",
           [file]
         );
-        console.log(`[migrations] Applied ${file}`);
+        logger.info({ file }, "[migrations] Applied migration");
       }
     }
   } finally {

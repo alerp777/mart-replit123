@@ -56,7 +56,7 @@ import whatsappDeliveryRouter from "./whatsapp-delivery.js";
 import businessRulesRouter from "./business-rules.js";
 import loyaltyFullRouter from "./loyalty-full.js";
 import { adminAuth } from "./admin-shared.js";
-import { userApiLimiter } from "../middleware/rate-limit.js";
+import { userApiLimiter, publicLimiter } from "../middleware/rate-limit.js";
 import { verifyTokenFamily } from "../middleware/auth.js";
 
 const router: IRouter = Router();
@@ -74,13 +74,13 @@ if (process.env["ADMIN_LEGACY_AUTH_DISABLED"] !== "1") {
   router.use("/auth", authRouter);
 }
 router.use("/users", verifyTokenFamily, usersRouter);
-router.use("/products", productsRouter);
+router.use("/products", publicLimiter, productsRouter);
 router.use("/orders", verifyTokenFamily, userApiLimiter, ordersRouter);
 router.use("/cart", verifyTokenFamily, userApiLimiter, cartRouter);
 router.use("/wallet", verifyTokenFamily, userApiLimiter, walletRouter);
 router.use("/rides", verifyTokenFamily, userApiLimiter, ridesRouter);
 router.use("/locations", locationsRouter);
-router.use("/categories", categoriesRouter);
+router.use("/categories", publicLimiter, categoriesRouter);
 router.use("/pharmacy-orders", verifyTokenFamily, userApiLimiter, pharmacyRouter);
 router.use("/parcel-bookings", verifyTokenFamily, userApiLimiter, parcelRouter);
 router.use("/notifications", verifyTokenFamily, userApiLimiter, notificationsRouter);
@@ -112,8 +112,8 @@ router.use("/admin/maps", adminMapsRouter);
 router.use("/school", schoolRouter);
 router.use("/uploads", uploadsRouter);
 router.use("/sos", verifyTokenFamily, userApiLimiter, sosRouter);
-router.use("/recommendations", userApiLimiter, recommendationsRouter);
-router.use("/banners", bannersRouter);
+router.use("/recommendations", publicLimiter, userApiLimiter, recommendationsRouter);
+router.use("/banners", publicLimiter, bannersRouter);
 router.use("/variants", variantsRouter);
 router.use("/push", verifyTokenFamily, userApiLimiter, pushRouter);
 router.use("/kyc", verifyTokenFamily, userApiLimiter, kycRouter);
@@ -122,17 +122,17 @@ router.use("/van", vanRouter);
 router.use("/webhooks", webhooksRouter);
 router.use("/delivery/eligibility", deliveryEligibilityRouter);
 router.use("/popups", popupsRouter);
-router.use("/promotions", promotionsRouter);
+router.use("/promotions", publicLimiter, promotionsRouter);
 router.use("/admin/promotions", promotionsRouter);
 router.use("/support-chat", supportChatRouter);
-router.use("/vendors", publicVendorsRouter);
+router.use("/vendors", publicLimiter, publicVendorsRouter);
 router.use("/stats", statsRouter);
 router.use("/metrics", metricsRouter);
 router.use("/error-reports", errorReportsRouter);
 router.use("/admin/error-reports", errorReportsRouter);
 router.use("/communication", communicationRouter);
 router.use("/weather-config", weatherConfigRouter);
-router.use("/dl", deepLinksPublicRouter);
+router.use("/dl", publicLimiter, deepLinksPublicRouter);
 
 /**
  * Legal / consent surface used by the admin "Consent & Terms Versions"
