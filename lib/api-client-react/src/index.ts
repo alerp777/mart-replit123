@@ -3,6 +3,7 @@ export * from "./generated/api.schemas";
 export {
   createApiFetcher,
   RefreshError,
+  FetchTimeoutError,
 } from "./createApiFetcher";
 export type {
   CreateApiFetcherConfig,

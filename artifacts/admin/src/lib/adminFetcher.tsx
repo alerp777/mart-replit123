@@ -3,7 +3,7 @@ import { readCsrfFromCookie } from './adminAuthContext.js';
 import { safeSessionSet } from './safeStorage';
 import { toast } from '@/hooks/use-toast';
 import { ToastAction } from '@/components/ui/toast';
-import { createApiFetcher, RefreshError } from '@workspace/api-client-react';
+import { createApiFetcher, RefreshError, FetchTimeoutError } from '@workspace/api-client-react';
 
 /**
  * Typed Error for non-2xx admin fetcher responses. Replaces the previous
@@ -188,13 +188,15 @@ export async function fetchAdmin(
       throw new Error('Session expired. Please log in again.');
     }
     const reason = (signal as AbortSignal & { reason?: unknown }).reason;
-    const timeoutErr =
-      err instanceof TimeoutError ? err
-      : reason instanceof TimeoutError ? reason
-      : null;
-    if (timeoutErr) {
-      handleTimeoutError(timeoutErr, () => { fetchAdmin(endpoint, options).catch(() => {}); });
-      throw timeoutErr;
+    // FetchTimeoutError = factory's own timer fired (retry or parallel race).
+    // TimeoutError = admin's own timer fired (initial request signal).
+    const isTimeout =
+      err instanceof TimeoutError ||
+      err instanceof FetchTimeoutError ||
+      reason instanceof TimeoutError;
+    if (isTimeout) {
+      handleTimeoutError(new TimeoutError(), () => { fetchAdmin(endpoint, options).catch(() => {}); });
+      throw new TimeoutError();
     }
     throw err;
   }
@@ -231,13 +233,13 @@ export async function fetchAdminAbsolute(
       throw new Error('Session expired. Please log in again.');
     }
     const reason = (signal as AbortSignal & { reason?: unknown }).reason;
-    const timeoutErr =
-      err instanceof TimeoutError ? err
-      : reason instanceof TimeoutError ? reason
-      : null;
-    if (timeoutErr) {
-      handleTimeoutError(timeoutErr, () => { fetchAdminAbsolute(path, options).catch(() => {}); });
-      throw timeoutErr;
+    const isTimeout =
+      err instanceof TimeoutError ||
+      err instanceof FetchTimeoutError ||
+      reason instanceof TimeoutError;
+    if (isTimeout) {
+      handleTimeoutError(new TimeoutError(), () => { fetchAdminAbsolute(path, options).catch(() => {}); });
+      throw new TimeoutError();
     }
     throw err;
   }
@@ -269,13 +271,13 @@ export async function fetchAdminAbsoluteResponse(
       throw new Error('Session expired. Please log in again.');
     }
     const reason = (signal as AbortSignal & { reason?: unknown }).reason;
-    const timeoutErr =
-      err instanceof TimeoutError ? err
-      : reason instanceof TimeoutError ? reason
-      : null;
-    if (timeoutErr) {
-      handleTimeoutError(timeoutErr, () => { fetchAdminAbsoluteResponse(path, options).catch(() => {}); });
-      throw timeoutErr;
+    const isTimeout =
+      err instanceof TimeoutError ||
+      err instanceof FetchTimeoutError ||
+      reason instanceof TimeoutError;
+    if (isTimeout) {
+      handleTimeoutError(new TimeoutError(), () => { fetchAdminAbsoluteResponse(path, options).catch(() => {}); });
+      throw new TimeoutError();
     }
     throw err;
   }

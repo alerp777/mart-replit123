@@ -3,13 +3,22 @@
  *
  * Creates a per-app fetch function that centralises:
  *   - Bearer token injection (from getToken callback)
- *   - Configurable AbortController timeout (per-instance or per-call)
+ *   - Configurable AbortController timeout — ALWAYS applied even when the
+ *     caller passes its own signal (the two are merged via AbortSignal.any)
  *   - 401 → refresh → retry with a mutex (one concurrent refresh per instance)
  *   - Pluggable refresh via URL endpoint or custom async function
  *   - Extra headers per request and per refresh (CSRF, X-App, etc.)
  */
 
 export type RefreshResult = "refreshed" | "transient" | "auth_failed";
+
+/** Thrown when the factory's own timeout fires (not an external abort). */
+export class FetchTimeoutError extends Error {
+  constructor(message = "Request timed out") {
+    super(message);
+    this.name = "FetchTimeoutError";
+  }
+}
 
 /** Thrown by the CoreFetch function when a 401-triggered refresh fails. */
 export class RefreshError extends Error {
@@ -80,8 +89,10 @@ export interface CreateApiFetcherConfig {
   extraRefreshHeaders?: () => Record<string, string>;
 
   /**
-   * Default request timeout in ms. Pass a getter `() => ms` for dynamic
-   * updates (e.g. from platform config). Set to 0 to disable.
+   * Default request timeout in ms, or a getter for dynamic updates (e.g.
+   * from platform config). The timeout is ALWAYS applied — if the caller
+   * also supplies an AbortSignal via opts.signal, the two are merged.
+   * Set to 0 to disable factory timeout for all calls on this instance.
    * Default: 15 000 ms.
    */
   timeoutMs?: number | (() => number);
@@ -93,8 +104,10 @@ export interface CreateApiFetcherConfig {
 /** Extended RequestInit with an optional per-call timeout override. */
 export type CoreFetchOpts = RequestInit & {
   /**
-   * Per-call timeout in ms. Overrides the instance-level timeoutMs for this
-   * specific request only. Set to 0 to disable timeout for this call.
+   * Per-call timeout in ms, overriding the instance-level timeoutMs for this
+   * specific request. Set to 0 to disable factory timeout for this call only.
+   * Useful for long-running uploads that should not be cancelled by the
+   * default request timeout.
    */
   _timeoutMs?: number;
 };
@@ -102,8 +115,79 @@ export type CoreFetchOpts = RequestInit & {
 /**
  * Function returned by createApiFetcher.
  * Returns a raw Response; callers handle status codes, body parsing, and errors.
+ * Throws FetchTimeoutError when the factory's timeout fires.
+ * Throws RefreshError when a 401-triggered refresh fails.
  */
 export type CoreFetch = (path: string, opts?: CoreFetchOpts) => Promise<Response>;
+
+// ── Internal helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Builds a [signal, factoryCtrl, cleanup] triple.
+ *
+ * - If ms <= 0: no factory timeout; return external signal (or a never-firing
+ *   one). factoryCtrl is null.
+ * - If ms > 0: create a factory AbortController that fires after ms ms.
+ *   If external is also provided, merge both so whichever fires first aborts
+ *   the fetch. factoryCtrl is the factory's own controller so the caller can
+ *   check whether the factory's timer fired specifically.
+ *
+ * Merge strategy (both supported environments):
+ *   • AbortSignal.any (modern browsers / Node 20+): creates a minimal merged
+ *     signal; the originals are unaffected.
+ *   • Polyfill: external abort propagates into factoryCtrl via event listener;
+ *     the merged "signal" IS factoryCtrl.signal.
+ */
+function withTimeout(
+  ms: number,
+  external?: AbortSignal
+): [AbortSignal, AbortController | null, () => void] {
+  if (ms <= 0) {
+    if (external) return [external, null, () => {}];
+    const ctrl = new AbortController();
+    return [ctrl.signal, null, () => {}];
+  }
+
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(new FetchTimeoutError()), ms);
+  const clearTid = () => clearTimeout(tid);
+  ctrl.signal.addEventListener("abort", clearTid, { once: true });
+
+  if (!external) {
+    return [ctrl.signal, ctrl, clearTid];
+  }
+
+  // Merge factory timeout + external signal
+  if (typeof (AbortSignal as any).any === "function") {
+    // Best path: AbortSignal.any creates a lightweight merged signal.
+    // factoryCtrl.signal is only aborted by our setTimeout, so checking
+    // factoryCtrl.signal.reason instanceof FetchTimeoutError unambiguously
+    // identifies our own timeout vs an external abort.
+    const merged: AbortSignal = (AbortSignal as any).any([ctrl.signal, external]);
+    return [merged, ctrl, clearTid];
+  }
+
+  // Polyfill: propagate external abort into ctrl so fetch gets one signal.
+  if (external.aborted) {
+    clearTimeout(tid);
+    ctrl.abort(external.reason);
+  } else {
+    external.addEventListener(
+      "abort",
+      () => { clearTimeout(tid); ctrl.abort(external.reason); },
+      { once: true }
+    );
+  }
+  // factoryCtrl.signal.reason is FetchTimeoutError only when OUR timer fired.
+  return [ctrl.signal, ctrl, clearTid];
+}
+
+/** Checks whether a factory AbortController's timer was what triggered abort. */
+function isFactoryTimeout(ctrl: AbortController | null): boolean {
+  return ctrl !== null && ctrl.signal.reason instanceof FetchTimeoutError;
+}
+
+// ── Factory ──────────────────────────────────────────────────────────────────
 
 /**
  * Creates a fetch function with centralised auth handling for a single app.
@@ -111,7 +195,7 @@ export type CoreFetch = (path: string, opts?: CoreFetchOpts) => Promise<Response
  * Returns a tuple: [coreFetch, triggerRefresh].
  * - coreFetch(path, opts) — drop-in for fetch(); adds auth, timeout, auto-refresh.
  * - triggerRefresh() — exposes the mutex-guarded refresh for external callers
- *   (e.g. the `api.refreshToken` method in vendor/rider apps).
+ *   (e.g. the api.refreshToken method in vendor/rider apps).
  */
 export function createApiFetcher(
   config: CreateApiFetcherConfig
@@ -192,8 +276,8 @@ export function createApiFetcher(
   }
 
   // ── Header builder ────────────────────────────────────────────────────────
-  function buildHeaders(opts: RequestInit): Headers {
-    const headers = new Headers(opts.headers as HeadersInit | undefined);
+  function buildHeaders(fetchOpts: RequestInit): Headers {
+    const headers = new Headers(fetchOpts.headers as HeadersInit | undefined);
     const token = getToken();
     if (token && !headers.has("authorization")) {
       headers.set("authorization", `Bearer ${token}`);
@@ -204,36 +288,19 @@ export function createApiFetcher(
     return headers;
   }
 
-  // ── Timeout signal builder ────────────────────────────────────────────────
-  function withTimeout(
-    ms: number,
-    external?: AbortSignal
-  ): [AbortSignal, () => void] {
-    if (external) {
-      return [external, () => {}];
-    }
-    if (ms <= 0) {
-      return [new AbortController().signal, () => {}];
-    }
-    const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), ms);
-    ctrl.signal.addEventListener("abort", () => clearTimeout(tid), {
-      once: true,
-    });
-    return [ctrl.signal, () => clearTimeout(tid)];
-  }
-
   // ── Core fetch function ───────────────────────────────────────────────────
   async function coreFetch(
     path: string,
     opts: CoreFetchOpts = {}
   ): Promise<Response> {
     const { _timeoutMs: callTimeout, ...fetchOpts } = opts;
+    // Per-call _timeoutMs overrides the instance timeout (including 0 = disabled).
     const effectiveTimeout =
       callTimeout !== undefined ? callTimeout : getTimeoutMs();
+
     const external = fetchOpts.signal as AbortSignal | undefined;
-    const [signal, cancelTimeout] = withTimeout(
-      external ? 0 : effectiveTimeout,
+    const [signal, factoryCtrl, cancelTimeout] = withTimeout(
+      effectiveTimeout,
       external
     );
     const headers = buildHeaders(fetchOpts);
@@ -246,9 +313,12 @@ export function createApiFetcher(
         signal,
         credentials: credentialsMode,
       });
-    } finally {
+    } catch (err) {
       cancelTimeout();
+      if (isFactoryTimeout(factoryCtrl)) throw new FetchTimeoutError();
+      throw err;
     }
+    cancelTimeout();
 
     if (res.status !== 401) {
       return res;
@@ -267,10 +337,11 @@ export function createApiFetcher(
       throw new RefreshError(false);
     }
 
-    // Refreshed — retry once with the new token
+    // Refreshed — retry once with the new token.
+    // Retry uses the same effective timeout (respects _timeoutMs: 0 override).
+    // No external signal on retry — it is fully factory-managed.
     const retryHeaders = buildHeaders(fetchOpts); // picks up new token via getToken()
-    const retryTimeout = getTimeoutMs();
-    const [retrySignal, cancelRetryTimeout] = withTimeout(retryTimeout);
+    const [retrySignal, retryCtrl, cancelRetryTimeout] = withTimeout(effectiveTimeout);
     try {
       return await fetch(`${baseUrl}${path}`, {
         ...fetchOpts,
@@ -278,6 +349,9 @@ export function createApiFetcher(
         signal: retrySignal,
         credentials: credentialsMode,
       });
+    } catch (err) {
+      if (isFactoryTimeout(retryCtrl)) throw new FetchTimeoutError();
+      throw err;
     } finally {
       cancelRetryTimeout();
     }
