@@ -54,15 +54,19 @@ function ReturnPanel({ order, onRefundOrder }: { order: any; onRefundOrder?: (am
 
   const handleAction = async (returnId: string, action: "approve" | "reject") => {
     setActioning(returnId);
+    const newStatus = action === "approve" ? "approved" : "rejected";
+    const prevRequests = requests;
+    setRequests(prev => prev.map(r => r.id === returnId ? { ...r, status: newStatus } : r));
     try {
-      const updatedReqs = await adminFetch(`/orders/${order.id}/returns/${returnId}`, { method: "PATCH", body: JSON.stringify({ status: action === "approve" ? "approved" : "rejected" }) });
+      await adminFetch(`/orders/${order.id}/returns/${returnId}`, { method: "PATCH", body: JSON.stringify({ status: newStatus }) });
       toast({ title: action === "approve" ? "Return approved" : "Return rejected", description: action === "approve" ? "Issuing refund now…" : "Return request closed." });
-      await loadRequests();
+      void loadRequests();
       if (action === "approve" && onRefundOrder) {
-        const approvedReq = requests.find(r => r.id === returnId);
+        const approvedReq = prevRequests.find(r => r.id === returnId);
         onRefundOrder(approvedReq?.amount ?? order.total, approvedReq?.reason ?? "Return approved by admin");
       }
     } catch (e: any) {
+      setRequests(prevRequests);
       toast({ title: "Action failed", description: e.message, variant: "destructive" });
     }
     setActioning(null);
@@ -189,11 +193,14 @@ function DisputePanel({ order }: { order: any }) {
 
   const handleResolve = async (disputeId: string, resolution: "resolved" | "dismissed") => {
     setActioning(disputeId);
+    const prevDisputes = disputes;
+    setDisputes(prev => prev.map(d => d.id === disputeId ? { ...d, status: resolution } : d));
     try {
       await adminFetch(`/orders/${order.id}/disputes/${disputeId}`, { method: "PATCH", body: JSON.stringify({ status: resolution }) });
       toast({ title: resolution === "resolved" ? "Dispute resolved" : "Dispute dismissed" });
-      await loadDisputes();
+      void loadDisputes();
     } catch (e: any) {
+      setDisputes(prevDisputes);
       toast({ title: "Action failed", description: e.message, variant: "destructive" });
     }
     setActioning(null);

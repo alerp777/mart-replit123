@@ -78,12 +78,58 @@ export const usePendingUsers = () => {
   });
 };
 
+/** Snapshot all matching cache entries for a query key prefix, for rollback. */
+function snapshotQueries(queryClient: ReturnType<typeof useQueryClient>, queryKey: unknown[]) {
+  const snapshots: { queryKey: unknown[]; data: unknown }[] = [];
+  queryClient.getQueriesData({ queryKey, exact: false }).forEach(([key, data]) => {
+    snapshots.push({ queryKey: key as unknown[], data });
+  });
+  return snapshots;
+}
+
+/** Restore snapshots captured by snapshotQueries. */
+function restoreSnapshots(queryClient: ReturnType<typeof useQueryClient>, snapshots: { queryKey: unknown[]; data: unknown }[]) {
+  for (const { queryKey, data } of snapshots) {
+    queryClient.setQueryData(queryKey, data);
+  }
+}
+
+/** Remove a user by id from a cache entry that may be an array or { users: [...] }. */
+function removeUserFromCache(old: unknown, id: string): unknown {
+  if (Array.isArray(old)) return old.filter((u: any) => u.id !== id);
+  const cache = old as Record<string, unknown> | undefined;
+  if (cache && Array.isArray(cache["users"])) {
+    return { ...cache, users: (cache["users"] as any[]).filter((u: any) => u.id !== id) };
+  }
+  return old;
+}
+
 export const useApproveUser = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, note }: { id: string; note?: string }) =>
       adminFetch(`/users/${id}/approve`, { method: "POST", body: JSON.stringify({ note }) }),
-    onSuccess: () => {
+    onMutate: async ({ id }) => {
+      await queryClient.cancelQueries({ queryKey: ["admin-users-pending"] });
+      await queryClient.cancelQueries({ queryKey: ["admin-users"] });
+      const prevPending = snapshotQueries(queryClient, ["admin-users-pending"]);
+      const prevUsers = snapshotQueries(queryClient, ["admin-users"]);
+      queryClient.setQueriesData({ queryKey: ["admin-users-pending"], exact: false }, (old) => removeUserFromCache(old, id));
+      queryClient.setQueriesData({ queryKey: ["admin-users"], exact: false }, (old) => {
+        if (Array.isArray(old)) return old.map((u: any) => u.id === id ? { ...u, status: "active", isVerified: true } : u);
+        const cache = old as Record<string, unknown> | undefined;
+        if (cache && Array.isArray(cache["users"])) {
+          return { ...cache, users: (cache["users"] as any[]).map((u: any) => u.id === id ? { ...u, status: "active", isVerified: true } : u) };
+        }
+        return old;
+      });
+      return { prevPending, prevUsers };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prevPending) restoreSnapshots(queryClient, context.prevPending);
+      if (context?.prevUsers) restoreSnapshots(queryClient, context.prevUsers);
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       queryClient.invalidateQueries({ queryKey: ["admin-users-pending"] });
     },
@@ -95,7 +141,27 @@ export const useRejectUser = () => {
   return useMutation({
     mutationFn: ({ id, note }: { id: string; note: string }) =>
       adminFetch(`/users/${id}/reject`, { method: "POST", body: JSON.stringify({ note }) }),
-    onSuccess: () => {
+    onMutate: async ({ id }) => {
+      await queryClient.cancelQueries({ queryKey: ["admin-users-pending"] });
+      await queryClient.cancelQueries({ queryKey: ["admin-users"] });
+      const prevPending = snapshotQueries(queryClient, ["admin-users-pending"]);
+      const prevUsers = snapshotQueries(queryClient, ["admin-users"]);
+      queryClient.setQueriesData({ queryKey: ["admin-users-pending"], exact: false }, (old) => removeUserFromCache(old, id));
+      queryClient.setQueriesData({ queryKey: ["admin-users"], exact: false }, (old) => {
+        if (Array.isArray(old)) return old.map((u: any) => u.id === id ? { ...u, status: "rejected" } : u);
+        const cache = old as Record<string, unknown> | undefined;
+        if (cache && Array.isArray(cache["users"])) {
+          return { ...cache, users: (cache["users"] as any[]).map((u: any) => u.id === id ? { ...u, status: "rejected" } : u) };
+        }
+        return old;
+      });
+      return { prevPending, prevUsers };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prevPending) restoreSnapshots(queryClient, context.prevPending);
+      if (context?.prevUsers) restoreSnapshots(queryClient, context.prevUsers);
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       queryClient.invalidateQueries({ queryKey: ["admin-users-pending"] });
     },
@@ -426,7 +492,35 @@ export const useApproveProduct = () => {
   return useMutation({
     mutationFn: ({ id, note }: { id: string; note?: string }) =>
       adminFetch(`/products/${id}/approve`, { method: "PATCH", body: JSON.stringify({ note }) }),
-    onSuccess: () => {
+    onMutate: async ({ id }) => {
+      await qc.cancelQueries({ queryKey: ["admin-products-pending"] });
+      await qc.cancelQueries({ queryKey: ["admin-products"] });
+      const prevPending = snapshotQueries(qc, ["admin-products-pending"]);
+      const prevProducts = snapshotQueries(qc, ["admin-products"]);
+      const removeProd = (old: unknown) => {
+        if (Array.isArray(old)) return old.filter((p: any) => p.id !== id);
+        const cache = old as Record<string, unknown> | undefined;
+        if (cache && Array.isArray(cache["products"])) {
+          return { ...cache, products: (cache["products"] as any[]).filter((p: any) => p.id !== id) };
+        }
+        return old;
+      };
+      qc.setQueriesData({ queryKey: ["admin-products-pending"], exact: false }, removeProd);
+      qc.setQueriesData({ queryKey: ["admin-products"], exact: false }, (old) => {
+        if (Array.isArray(old)) return old.map((p: any) => p.id === id ? { ...p, status: "approved", isApproved: true } : p);
+        const cache = old as Record<string, unknown> | undefined;
+        if (cache && Array.isArray(cache["products"])) {
+          return { ...cache, products: (cache["products"] as any[]).map((p: any) => p.id === id ? { ...p, status: "approved", isApproved: true } : p) };
+        }
+        return old;
+      });
+      return { prevPending, prevProducts };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prevPending) restoreSnapshots(qc, context.prevPending);
+      if (context?.prevProducts) restoreSnapshots(qc, context.prevProducts);
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ["admin-products-pending"] });
       qc.invalidateQueries({ queryKey: ["admin-products"] });
     },
@@ -1105,7 +1199,30 @@ export const useAssignRider = () => {
   return useMutation({
     mutationFn: ({ orderId, riderId, riderName, riderPhone }: { orderId: string; riderId?: string; riderName?: string; riderPhone?: string }) =>
       adminFetch(`/orders/${orderId}/assign-rider`, { method: "PATCH", body: JSON.stringify({ riderId, riderName, riderPhone }) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-orders-enriched"] }),
+    onMutate: async ({ orderId, riderId, riderName, riderPhone }) => {
+      await qc.cancelQueries({ queryKey: ["admin-orders-enriched"] });
+      const prev = snapshotQueries(qc, ["admin-orders-enriched"]);
+      type OrdersCache = { orders: Array<Record<string, unknown>> } & Record<string, unknown>;
+      qc.setQueriesData({ queryKey: ["admin-orders-enriched"], exact: false }, (old: unknown) => {
+        const cache = old as OrdersCache | undefined;
+        if (!cache?.orders) return old;
+        return {
+          ...cache,
+          orders: cache.orders.map(o =>
+            o["id"] === orderId
+              ? { ...o, riderId: riderId ?? o["riderId"], riderName: riderName ?? o["riderName"], riderPhone: riderPhone ?? o["riderPhone"], updatedAt: new Date().toISOString() }
+              : o
+          ),
+        };
+      });
+      return { prev };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prev) restoreSnapshots(qc, context.prev);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["admin-orders-enriched"] });
+    },
   });
 };
 
