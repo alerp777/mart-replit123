@@ -341,7 +341,8 @@ function PermissionMatrix({ roles, catalog, loading, canManage, onReload }: {
         </p>
       </div>
 
-      <div className="rounded-xl border border-border/50 overflow-auto shadow-sm">
+      <div className="overflow-x-auto rounded-xl shadow-sm">
+      <div className="rounded-xl border border-border/50">
         <table className="min-w-full text-xs">
           <thead>
             <tr className="bg-muted/40 border-b border-border">
@@ -434,6 +435,7 @@ function PermissionMatrix({ roles, catalog, loading, canManage, onReload }: {
           </tbody>
         </table>
       </div>
+      </div>
       {canManage && (
         <p className="text-xs text-muted-foreground">
           <span className="inline-block w-3 h-3 rounded-full ring-2 ring-amber-400 bg-indigo-100 mr-1.5 align-middle" />
@@ -523,7 +525,6 @@ export default function RolesPermissionsPage() {
       }
     } catch (err) {
       if (isAbortError(err)) return;
-      console.error("[RolesPermissions] reload failed:", err);
       toast({ title: "Failed to load roles", description: String(err), variant: "destructive" });
     } finally {
       if (!signal?.aborted) setLoading(false);
@@ -573,7 +574,6 @@ export default function RolesPermissionsPage() {
       const r = await fetchAdmin(`/system/rbac/admins/${a.id}/effective-permissions`);
       setActiveAdminEffective(r?.data?.permissions ?? r?.permissions ?? []);
     } catch (err) {
-      if (import.meta.env.DEV) console.warn("[RolesPermissions] Effective permissions fetch failed:", err);
       toast({ title: "Could not load effective permissions", description: "Try again or reload the page.", variant: "destructive" });
     }
   };

@@ -312,7 +312,6 @@ export default function SosAlerts() {
       setActiveCount(typeof data.activeCount === "number" ? data.activeCount : 0);
       setPage(p);
     } catch (err) {
-      console.error("[SOS Alerts] Load failed:", err);
     }
     setLastUpdatedAt(Date.now());
     setLoading(false);

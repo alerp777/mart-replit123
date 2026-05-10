@@ -707,7 +707,6 @@ export default function LiveRidersMap() {
   });
   useEffect(() => {
     if (mapConfigError) {
-      console.error("[LiveRidersMap] map config fetch failed:", mapConfigError);
     }
   }, [mapConfigError]);
 

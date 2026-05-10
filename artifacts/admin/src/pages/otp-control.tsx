@@ -245,7 +245,6 @@ export default function OtpControl() {
       const d = await api("GET", "/otp/status");
       if (d?.data) setStatus(d.data);
     } catch (err) {
-      console.warn("[OtpControl] Status load failed:", err);
       toast({ title: "Failed to load OTP status", variant: "destructive" });
     } finally { setStatusLoading(false); }
   }, [toast]);
@@ -261,7 +260,6 @@ export default function OtpControl() {
         setAuditRows(bypass);
       }
     } catch (err) {
-      console.warn("[OtpControl] Audit load failed:", err);
       toast({ title: "Failed to load audit log", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
     } finally { setAuditLoading(false); }
   }, [toast]);
@@ -276,7 +274,6 @@ export default function OtpControl() {
       const winMin   = get("security_otp_window_min", "10");
       setRlPhone(perPhone); setRlIp(perIp); setRlWindow(winMin);
     } catch (err) {
-      console.warn("[OtpControl] Rate limit load failed:", err);
     }
   }, []);
 

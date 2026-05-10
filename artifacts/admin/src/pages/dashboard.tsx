@@ -182,7 +182,8 @@ function LiveMetricsStrip() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_auto] gap-4">
+      <div className="overflow-x-auto">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_auto] gap-4 min-w-[480px]">
         {/* Live events ticker */}
         <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-border/30 flex items-center justify-between">
@@ -285,6 +286,7 @@ function LiveMetricsStrip() {
             )}
           </div>
         </Card>
+      </div>
       </div>
     </div>
   );

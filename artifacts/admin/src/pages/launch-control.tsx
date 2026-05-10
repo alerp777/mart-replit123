@@ -280,7 +280,6 @@ export default function LaunchControl() {
       return { ok: true, data: (data ?? {}) as Record<string, unknown> };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Request failed";
-      if (import.meta.env.DEV) console.error(`[LaunchControl] apiCall ${options.method ?? "GET"} ${url} failed:`, err);
       return { ok: false, data: { message } };
     }
   }
@@ -304,7 +303,6 @@ export default function LaunchControl() {
       });
       qc.invalidateQueries({ queryKey: ["launch-settings"] });
     } catch (err) {
-      if (import.meta.env.DEV) console.error("[LaunchControl] Mode switch failed:", err);
       toast({ title: "Network error — mode not changed", variant: "destructive" });
     } finally {
       setSaving(false);
@@ -321,7 +319,6 @@ export default function LaunchControl() {
       toast({ title: "Reset to AI Defaults", description: "All settings have been reset to AI-recommended values" });
       qc.invalidateQueries({ queryKey: ["launch-settings"] });
     } catch (err) {
-      if (import.meta.env.DEV) console.error("[LaunchControl] Reset to defaults failed:", err);
       toast({ title: "Network error — reset not applied", variant: "destructive" });
     } finally {
       setSaving(false);
@@ -345,7 +342,6 @@ export default function LaunchControl() {
       qc.invalidateQueries({ queryKey: ["launch-settings"] });
       toast({ title: `${key} set to ${newValue}`, description: newValue === "on" ? "Feature enabled" : "Feature disabled" });
     } catch (err) {
-      if (import.meta.env.DEV) console.error("[LaunchControl] Feature toggle failed:", err);
       toast({ title: "Network error — toggle not applied", variant: "destructive" });
     } finally {
       setTogglingKey(null);
@@ -359,7 +355,6 @@ export default function LaunchControl() {
       toast({ title: "Default plan updated" });
       qc.invalidateQueries({ queryKey: ["launch-vendor-plans"] });
     } catch (err) {
-      if (import.meta.env.DEV) console.error("[LaunchControl] Set default plan failed:", err);
       toast({ title: "Network error", variant: "destructive" });
     }
   };
@@ -371,7 +366,6 @@ export default function LaunchControl() {
       toast({ title: "Plan deleted" });
       qc.invalidateQueries({ queryKey: ["launch-vendor-plans"] });
     } catch (err) {
-      if (import.meta.env.DEV) console.error("[LaunchControl] Delete plan failed:", err);
       toast({ title: "Network error", variant: "destructive" });
     }
   };
@@ -399,7 +393,6 @@ export default function LaunchControl() {
       qc.invalidateQueries({ queryKey: ["launch-vendor-plans"] });
       setPlanDialog({ open: false });
     } catch (err) {
-      if (import.meta.env.DEV) console.error("[LaunchControl] Save plan failed:", err);
       toast({ title: "Network error", variant: "destructive" });
     } finally {
       setSaving(false);
@@ -422,7 +415,6 @@ export default function LaunchControl() {
       qc.invalidateQueries({ queryKey: ["launch-role-presets"] });
       setRoleCreateDialog(false);
     } catch (err) {
-      if (import.meta.env.DEV) console.error("[LaunchControl] Create role preset failed:", err);
       toast({ title: "Network error", variant: "destructive" });
     } finally {
       setSaving(false);

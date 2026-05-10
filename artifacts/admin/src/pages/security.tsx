@@ -206,7 +206,6 @@ export default function SecurityPage() {
       const data = await fetchAdminAbsolute(`/api/admin/mfa/status`);
       setMfaStatus(data);
     } catch (err) {
-      if (import.meta.env.DEV) console.warn("[Security] MFA status fetch failed:", err);
       toast({ title: "Could not load MFA status", description: "Auth settings may be unavailable.", variant: "destructive" });
     }
   }, [toast]);

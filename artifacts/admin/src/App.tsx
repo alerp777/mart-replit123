@@ -57,7 +57,6 @@ import VendorInventorySettingsPage from "@/pages/vendor-inventory-settings";
 import Vendors from "@/pages/vendors";
 import Riders from "@/pages/riders";
 import PromoCodes from "@/pages/promo-codes";
-import Notifications from "@/pages/notifications";
 import Withdrawals from "@/pages/Withdrawals";
 import DepositRequests from "@/pages/DepositRequests";
 import Security from "@/pages/security";
@@ -78,7 +77,6 @@ import SupportChat from "@/pages/support-chat";
 import FaqManagement from "@/pages/faq-management";
 const ErrorMonitor = lazy(() => import("@/pages/error-monitor"));
 const Communication = lazy(() => import("@/pages/communication"));
-const SmsGateways = lazy(() => import("@/pages/sms-gateways"));
 import Loyalty from "@/pages/loyalty";
 import WalletTransfers from "@/pages/wallet-transfers";
 import ChatMonitor from "@/pages/chat-monitor";
@@ -369,7 +367,6 @@ function Router() {
       <Route path="/vendors"><ProtectedRoute component={Vendors} requiredPermission="vendors.view" /></Route>
       <Route path="/riders"><ProtectedRoute component={Riders} requiredPermission="fleet.rides.view" /></Route>
       <Route path="/promo-codes"><ProtectedRoute component={PromoCodes} requiredPermission="promotions.view" /></Route>
-      <Route path="/notifications"><ProtectedRoute component={Notifications} requiredPermission="support.broadcast.send" /></Route>
       <Route path="/notifications"><RedirectTo to="/communications?tab=log" /></Route>
       <Route path="/withdrawals"><ProtectedRoute component={Withdrawals} requiredPermission="finance.withdrawals.view" /></Route>
       <Route path="/deposit-requests"><ProtectedRoute component={DepositRequests} requiredPermission="finance.deposits.review" /></Route>
@@ -388,7 +385,6 @@ function Router() {
       <Route path="/faq-management"><ProtectedRoute component={FaqManagement} requiredPermission="content.products.view" /></Route>
       <Route path="/search-analytics"><RedirectTo to="/analytics?tab=search" /></Route>
       <Route path="/error-monitor"><ProtectedRoute component={ErrorMonitor} requiredPermission="system.settings.view" /></Route>
-      <Route path="/communication"><RedirectTo to="/communications" /></Route>
       <Route path="/communication"><RedirectTo to="/communications?tab=kpis" /></Route>
       <Route path="/loyalty"><ProtectedRoute component={Loyalty} requiredPermission="promotions.view" /></Route>
       <Route path="/wallet-transfers"><ProtectedRoute component={WalletTransfers} requiredPermission="finance.transactions.view" /></Route>
@@ -401,7 +397,6 @@ function Router() {
       <Route path="/deep-links"><ProtectedRoute component={DeepLinks} requiredPermission="content.products.view" /></Route>
       <Route path="/launch-control"><ProtectedRoute component={LaunchControl} requiredPermission="system.maintenance" /></Route>
       <Route path="/otp-control"><ProtectedRoute component={OtpControl} requiredPermission="system.settings.edit" /></Route>
-      <Route path="/sms-gateways"><ProtectedRoute component={SmsGateways} requiredPermission="system.settings.edit" /></Route>
       <Route path="/sms-gateways"><RedirectTo to="/communications?tab=settings" /></Route>
       <Route path="/auth-methods"><ProtectedRoute component={AuthMethods} requiredPermission="system.settings.edit" /></Route>
       <Route path="/roles-permissions"><ProtectedRoute component={RolesPermissions} requiredPermission="system.roles.manage" /></Route>

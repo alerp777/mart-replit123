@@ -87,7 +87,6 @@ export function SystemSection() {
       }
     }).catch((err) => {
       if (isAbortError(err)) return;
-      if (import.meta.env.DEV) console.error("[SystemSettings] Snapshots load failed:", err);
     });
   }, []);
 
@@ -146,7 +145,6 @@ export function SystemSection() {
 
   const handleDismissUndo = async (id: string) => {
     try { await apiFetch(`/snapshots/${id}`, { method: "DELETE" }); } catch (err) {
-      if (import.meta.env.DEV) console.error("[SystemSettings] Snapshot dismiss failed:", err);
     }
     setPendingUndos(prev => prev.filter(u => u.id !== id));
     toast({ title: "Action confirmed permanent", description: "Undo snapshot discarded." });
@@ -194,7 +192,6 @@ export function SystemSection() {
       const data = await apiFetch("/demo-backups");
       setDemoBackups(data.data ?? data);
     } catch (err) {
-      if (import.meta.env.DEV) console.error("[SystemSettings] Demo backups load failed:", err);
     }
     setDemoBackupsLoading(false);
   }, []);
@@ -978,7 +975,6 @@ function MaintenanceScheduleSection({ apiFetch, toast }: { apiFetch: (path: stri
       setEnd(data.scheduledEnd || "");
       setMsg(data.scheduledMsg || "");
     }).catch((err) => {
-      if (import.meta.env.DEV) console.error("[SystemSettings] Maintenance schedule load failed:", err);
     }).finally(() => setLoading(false));
   }, [apiFetch]);
 
@@ -1065,7 +1061,6 @@ function DataRetentionSection({ apiFetch, toast }: { apiFetch: (path: string, op
       const data = d.data ?? d;
       setPolicies({ locationDays: data.locationDays, chatDays: data.chatDays, auditDays: data.auditDays, notificationsDays: data.notificationsDays, lastCleanup: data.lastCleanup });
     }).catch((err) => {
-      if (import.meta.env.DEV) console.error("[SystemSettings] Retention policies load failed:", err);
     }).finally(() => setLoading(false));
   }, [apiFetch]);
 

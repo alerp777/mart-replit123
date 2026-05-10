@@ -597,7 +597,6 @@ export default function ErrorMonitor() {
       setTaskPlanContent(result.taskPlan);
       queryClient.invalidateQueries({ queryKey: ["error-reports"] });
     } catch (err) {
-      console.error("[ErrorMonitor] Generate task failed:", err);
       setTaskPlanContent("Failed to generate task plan.");
     } finally {
       setTaskPlanLoading(false);
@@ -629,7 +628,6 @@ export default function ErrorMonitor() {
       });
       setBulkTaskContent(result.taskPlan);
     } catch (err) {
-      console.error("[ErrorMonitor] Bulk generate task failed:", err);
       setBulkTaskContent("Failed to generate bulk task plan.");
     } finally {
       setBulkTaskLoading(false);
@@ -645,7 +643,6 @@ export default function ErrorMonitor() {
       await refetchFileScanLatest();
       await refetchFileScanHistory();
     } catch (err) {
-      console.error("[ErrorMonitor] File scan failed:", err);
       setFileScanError("File scan failed. Check the API server connection.");
     } finally {
       setFileScanRunning(false);
@@ -663,7 +660,6 @@ export default function ErrorMonitor() {
       });
       setTaskPlanContent(result.taskPlan);
     } catch (err) {
-      console.error("[ErrorMonitor] File scan generate task failed:", err);
       setTaskPlanContent("Failed to generate task plan.");
     } finally {
       setTaskPlanLoading(false);
@@ -674,7 +670,7 @@ export default function ErrorMonitor() {
     const now = new Date().toISOString();
     setViewedErrorTimestamps(prev => {
       const next = { ...prev, [id]: now };
-      try { localStorage.setItem("ajkmart_viewed_errors_ts", JSON.stringify(next)); } catch (e) { console.warn("[ErrorMonitor] Could not persist viewed-errors timestamp:", e); }
+      try { localStorage.setItem("ajkmart_viewed_errors_ts", JSON.stringify(next)); } catch { /* storage unavailable */ }
       return next;
     });
   }, []);
@@ -691,7 +687,6 @@ export default function ErrorMonitor() {
       queryClient.invalidateQueries({ queryKey: ["error-count"] });
       queryClient.invalidateQueries({ queryKey: ["customer-reports-count"] });
     } catch (err) {
-      console.error("[ErrorMonitor] Scan failed:", err);
       setScanError("Scan failed. Check the API server connection.");
     } finally {
       setIsScanning(false);
@@ -1983,7 +1978,6 @@ export default function ErrorMonitor() {
                       document.execCommand("copy");
                       document.body.removeChild(ta);
                     } catch (clipErr) {
-                      console.warn("[ErrorMonitor] Clipboard fallback failed:", clipErr);
                     }
                   }
                 }}
@@ -2030,7 +2024,6 @@ export default function ErrorMonitor() {
                         document.execCommand("copy");
                         document.body.removeChild(ta);
                       } catch (clipErr) {
-                        console.warn("[ErrorMonitor] Bulk clipboard fallback failed:", clipErr);
                       }
                     }
                   }}

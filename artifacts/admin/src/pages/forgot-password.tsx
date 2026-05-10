@@ -31,7 +31,6 @@ export default function ForgotPassword() {
         setSubmitted(true);
       }
     } catch (err) {
-      console.error("[forgot-password] network error:", err);
       setSubmitted(true);
     } finally {
       setSubmitting(false);

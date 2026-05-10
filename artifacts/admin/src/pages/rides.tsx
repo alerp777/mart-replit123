@@ -596,7 +596,6 @@ function useDispatchTileConfig() {
       })
       .catch((err) => {
         if (isAbortError(err)) return;
-        console.error("[Rides] Map tile config fetch failed:", err);
       });
   }, []);
   return tile;
@@ -735,7 +734,6 @@ function DispatchMonitor() {
     });
 
     socket.on("connect_error", (err) => {
-      if (import.meta.env.DEV) console.warn("[DispatchMonitor] socket connection error:", err.message);
     });
 
     return () => { socket.disconnect(); };
@@ -1530,7 +1528,6 @@ export default function Rides() {
       queryClient.invalidateQueries({ queryKey: ["admin-rides-enriched"] });
     });
     socket.on("connect_error", (err) => {
-      if (import.meta.env.DEV) console.warn("[Rides] socket connection error:", err.message);
     });
     return () => { socket.disconnect(); };
   }, [queryClient]);

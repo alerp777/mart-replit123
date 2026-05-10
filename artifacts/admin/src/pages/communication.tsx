@@ -154,7 +154,6 @@ function DashboardTab() {
 
   useEffect(() => {
     adminFetch("/communication/dashboard").then(setStats).catch((err) => {
-      console.error("[Communication] Dashboard stats load failed:", err);
     });
 
     const socket = io(window.location.origin, {
@@ -218,7 +217,7 @@ function SettingsTab() {
         }
       }
       setLoaded(true);
-    }).catch((err) => { console.error("[Comm] Settings fetch failed:", err); setLoaded(true); });
+    }).catch(() => { setLoaded(true); });
   }, []);
 
   const save = async () => {
@@ -464,7 +463,6 @@ function ConversationsTab() {
   useEffect(() => {
     fetchAdmin(`/communication/conversations?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=${LIMIT}`)
       .then((d) => { setConversations((d.data as ConversationItem[]) || []); setTotal((d.total as number) || 0); })
-      .catch((err) => { console.error("[Communication] Conversations load failed:", err); });
   }, [debouncedSearch, page]);
 
   const viewMessages = async (conv: ConversationItem) => {
@@ -600,7 +598,6 @@ function CallHistoryTab() {
   useEffect(() => {
     fetchAdmin(`/communication/calls?page=${page}&limit=${LIMIT}`)
       .then((d) => { setCalls((d.data as CallItem[]) || []); setTotal((d.total as number) || 0); })
-      .catch((err) => { console.error("[Communication] Call history load failed:", err); });
   }, [page]);
 
   const statusColor: Record<string, string> = { completed: "default", missed: "destructive", rejected: "secondary", answered: "default", initiated: "outline" };
@@ -672,7 +669,6 @@ function AILogsTab() {
   useEffect(() => {
     fetchAdmin(`/communication/ai-logs?page=${page}&limit=${LIMIT}`)
       .then((d) => { setLogs((d.data as AILogItem[]) || []); setTotal((d.total as number) || 0); })
-      .catch((err) => { console.error("[Communication] AI logs load failed:", err); });
   }, [page]);
 
   return (
@@ -743,7 +739,6 @@ function FlaggedTab() {
   const load = useCallback(() => {
     adminFetch(`/communication/flags?status=${status}`)
       .then((d: FlagItem[] | { data: FlagItem[] }) => setFlags(Array.isArray(d) ? d : d.data))
-      .catch((err) => { console.error("[Communication] Flagged messages load failed:", err); });
   }, [status]);
 
   useEffect(() => { load(); }, [load]);
@@ -911,7 +906,6 @@ function RoleFormDialog({
       adminFetch("/communication/roles/ai-status")
         .then(() => setAiAvailable(true))
         .catch((err: unknown) => {
-          console.warn("[Communication] AI status probe failed:", err);
           setAiAvailable(false);
         });
     }
@@ -1083,7 +1077,6 @@ function RoleTemplatesTab() {
   const loadRoles = () => {
     adminFetch("/communication/roles")
       .then((d: RoleItem[] | { data: RoleItem[] }) => setRoles(Array.isArray(d) ? d : d.data))
-      .catch((err) => { console.error("[Communication] Roles load failed:", err); });
   };
 
   useEffect(() => { loadRoles(); }, []);
@@ -1227,7 +1220,6 @@ function AjkIdsTab() {
     params.set("limit", String(LIMIT));
     fetchAdmin(`/communication/ajk-ids?${params.toString()}`)
       .then((d) => { setUsers((d.data as UserItem[]) || []); setTotal((d.total as number) || 0); })
-      .catch((err) => { console.error("[Communication] AJK IDs load failed:", err); });
   }, [debouncedSearch, roleFilter, page]);
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
@@ -1239,7 +1231,6 @@ function AjkIdsTab() {
       const data = await adminFetch(`/communication/users/search?q=${encodeURIComponent(q)}`);
       setSearchResults(data as UserItem[]);
     } catch (err) {
-      if (import.meta.env.DEV) console.warn("[Communication] User search failed:", err);
       setSearchResults([]);
       toast({ title: "User search failed", description: "Could not fetch search results. Please try again.", variant: "destructive" });
     }

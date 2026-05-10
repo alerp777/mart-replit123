@@ -24,7 +24,6 @@ export function GpsStampCard({ order }: { order: any }) {
         }
       })
       .catch((err) => {
-        console.error("[GpsStampCard] Reverse geocode failed:", err);
       });
     return () => { cancelled = true; };
   }, [cLat, cLng]);
