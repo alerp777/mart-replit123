@@ -6,7 +6,7 @@ import helmet from "helmet";
 import pinoHttp from "pino-http";
 import { pinoInstance, logger } from "./lib/logger.js";
 import { createProxyMiddleware } from "http-proxy-middleware";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { runSqlMigrations } from "./services/sqlMigrationRunner.js";
@@ -319,6 +319,43 @@ export function createServer() {
         app.use((handlers["requestHandler"] as () => express.RequestHandler)());
       }
     }
+  }
+
+  /* ── Production: serve built static assets for all sub-apps ─────────────
+        When NODE_ENV=production the dev proxies are not registered, so this
+        block serves the Vite-built outputs from their dist/public dirs and
+        the Expo static-build for the customer app.
+        Falls back gracefully (503) when a dist dir is absent (not yet built).
+   ──────────────────────────────────────────────────────────────────────── */
+  if (process.env.NODE_ENV === "production") {
+    const staticApps: Array<{ prefix: string; dir: string; spa?: boolean }> = [
+      { prefix: "/admin",    dir: resolve(__dirname, "../../admin/dist/public"),         spa: true },
+      { prefix: "/vendor",   dir: resolve(__dirname, "../../vendor-app/dist/public"),    spa: true },
+      { prefix: "/rider",    dir: resolve(__dirname, "../../rider-app/dist/public"),     spa: true },
+      { prefix: "/customer", dir: resolve(__dirname, "../../../artifacts/ajkmart/static-build/web"), spa: true },
+    ];
+
+    for (const { prefix, dir, spa } of staticApps) {
+      if (!existsSync(dir)) {
+        logger.warn(`[prod:static] ${prefix} dist not found at ${dir} — returning 503 for these routes. Run the build for this app.`);
+        app.use(prefix, (_req: express.Request, res: express.Response) => {
+          res.status(503).send(`${prefix} app not built. Run pnpm build in the workspace.`);
+        });
+        continue;
+      }
+      app.use(prefix, express.static(dir, { maxAge: "1y", immutable: true }));
+      if (spa) {
+        const indexPath = resolve(dir, "index.html");
+        app.use(prefix, (_req: express.Request, res: express.Response) => {
+          if (existsSync(indexPath)) {
+            res.sendFile(indexPath);
+          } else {
+            res.status(404).send("index.html not found");
+          }
+        });
+      }
+    }
+    logger.info("[prod:static] Sub-app static serving configured for /admin /vendor /rider /customer");
   }
 
   /* ── Dev-only: serve sw.js files directly with Clear-Site-Data so the

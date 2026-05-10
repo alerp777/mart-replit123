@@ -33,13 +33,17 @@ process.on("uncaughtException", (err) => {
 });
 
 // ─── ENV FIRST-RUN CHECK ───────────────────────────────────────────────────
-const CRITICAL_VARS = ["DATABASE_URL", "JWT_SECRET", "ENCRYPTION_MASTER_KEY", "REDIS_URL"] as const;
+const CRITICAL_VARS = ["DATABASE_URL", "JWT_SECRET", "ENCRYPTION_MASTER_KEY"] as const;
 const IMPORTANT_VARS = [
   "ADMIN_ACCESS_TOKEN_SECRET",
   "ADMIN_REFRESH_TOKEN_SECRET",
   "ADMIN_CSRF_SECRET",
   "ERROR_REPORT_HMAC_SECRET",
 ] as const;
+// REDIS_URL is optional — rate limiting falls back to in-memory store and
+// JWT blacklisting is disabled when absent. The redis.ts module logs its own
+// warning. Not listed as CRITICAL so the server starts cleanly without Redis.
+const OPTIONAL_VARS = ["REDIS_URL"] as const;
 
 /** Known dev placeholder JWT secret values — must not be used in production. */
 const DEV_PLACEHOLDER_SECRETS = new Set([

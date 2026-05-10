@@ -3,6 +3,8 @@
   "compileOnSave": false,
   "files": [],
   "references": [
+    { "path": "./lib/service-constants" },
+    { "path": "./lib/i18n" },
     { "path": "./lib/admin-timing-shared" },
     { "path": "./lib/api-client-react" },
     { "path": "./lib/api-zod" },

@@ -91,6 +91,42 @@ function installDeps() {
   }
 }
 
+function buildLibs() {
+  const stamp     = path.join(root, "node_modules", ".libs-built-stamp");
+  const tsconfigPath = path.join(root, "tsconfig.json");
+  const stampTime = existsSync(stamp) ? statSync(stamp).mtimeMs : 0;
+  const tscTime   = existsSync(tsconfigPath) ? statSync(tsconfigPath).mtimeMs : Infinity;
+
+  // Check if any lib source has changed since last build
+  let needsBuild = tscTime > stampTime;
+  if (!needsBuild) {
+    try {
+      const libsDir = path.join(root, "lib");
+      const subdirs = fs.readdirSync(libsDir);
+      for (const sub of subdirs) {
+        const srcDir = path.join(libsDir, sub, "src");
+        if (!existsSync(srcDir)) continue;
+        const checkMtime = (dir) => {
+          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) { checkMtime(full); continue; }
+            if (statSync(full).mtimeMs > stampTime) needsBuild = true;
+          }
+        };
+        checkMtime(srcDir);
+        if (needsBuild) break;
+      }
+    } catch { needsBuild = true; }
+  }
+
+  if (needsBuild) {
+    run("Building shared lib packages (type declarations)", "pnpm", ["run", "typecheck:libs"]);
+    try { fs.writeFileSync(stamp, String(Date.now())); } catch {}
+  } else {
+    log("Shared lib packages up to date — skipping lib build");
+  }
+}
+
 function decryptEnv() {
   if (existsSync(path.join(root, ".env")) && statSync(path.join(root, ".env")).size > 0) {
     log(".env already present — skipping decrypt");
@@ -197,6 +233,7 @@ async function main() {
   log("=== AJKMart secure-start ===");
 
   installDeps();
+  buildLibs();
   decryptEnv();
   loadRootEnv();
 
