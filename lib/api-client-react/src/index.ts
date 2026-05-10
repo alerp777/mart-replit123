@@ -12,6 +12,14 @@ export type {
   RefreshResult,
 } from "./createApiFetcher";
 export {
+  createCircuitBreaker,
+  CircuitOpenError,
+} from "./circuitBreaker";
+export type {
+  CircuitBreakerConfig,
+  ApiCircuitBreaker,
+} from "./circuitBreaker";
+export {
   customFetch,
   setBaseUrl,
   setAuthTokenGetter,

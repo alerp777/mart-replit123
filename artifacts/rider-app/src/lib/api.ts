@@ -1,5 +1,5 @@
 import { getRiderApiBase } from "./envValidation";
-import { createApiFetcher, RefreshError } from "@workspace/api-client-react";
+import { createApiFetcher, RefreshError, createCircuitBreaker, CircuitOpenError } from "@workspace/api-client-react";
 
 const BASE = getRiderApiBase();
 
@@ -180,6 +180,14 @@ export function setApiTimeoutMs(ms: number): void {
   if (Number.isFinite(ms) && ms > 0) _apiTimeoutMs = Math.min(ms, 300_000);
 }
 
+/* ── Per-endpoint circuit breaker ─────────────────────────────────────────────
+   Opens after 3 consecutive 5xx failures on the same endpoint (once all
+   built-in retries are exhausted). Rejects new requests for 30 s to stop
+   hammering a degraded server. After cooldown it allows one probe request; on
+   success the circuit closes again, on failure the cooldown resets.           */
+const CB_DEFAULT_RETRIES = 3;
+const _circuitBreaker = createCircuitBreaker({ failureThreshold: 3, cooldownMs: 30_000 });
+
 /* ── Shared API fetcher (createApiFetcher factory) ────────────────────────────
    Centralises: Bearer injection, timeout, 401→refresh (mutex)→retry.
    setToken fires _tokenRefreshCallbacks (socket reconnect) and sweeps stale
@@ -217,7 +225,27 @@ interface ApiEnvelope<T = unknown> {
    here as `Order` / `Ride` so existing consumers (Home.tsx etc.) need no changes. */
 export type { RiderOrder as Order, RiderRide as Ride, RiderRequestsResponse } from "@workspace/api-zod";
 
-export async function apiFetch(path: string, opts: RequestInit = {}, _returnEnvelope = false, _5xxRetries = 3): Promise<any> {
+export async function apiFetch(path: string, opts: RequestInit = {}, _returnEnvelope = false, _5xxRetries = CB_DEFAULT_RETRIES): Promise<any> {
+  /* Guard: reject immediately if this endpoint's circuit is open.
+     Only checked on the initial call — recursive retries bypass this so they
+     can attempt the back-off sequence before the circuit actually records a
+     failure.  CircuitOpenError is converted to the standard error shape so
+     existing catch blocks that inspect { status, transient } still work. */
+  if (_5xxRetries === CB_DEFAULT_RETRIES) {
+    try {
+      _circuitBreaker.check(path);
+    } catch (err) {
+      if (err instanceof CircuitOpenError) {
+        const retryS = Math.ceil(err.retryAfterMs / 1000);
+        throw Object.assign(
+          new Error(`Service temporarily unavailable. Please try again in ${retryS}s.`),
+          { status: 503, transient: true, circuitOpen: true }
+        );
+      }
+      throw err;
+    }
+  }
+
   const isFormData = opts.body instanceof FormData;
   const mergedOpts: RequestInit = {
     ...opts,
@@ -272,6 +300,10 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _returnEnve
   }
 
   if (!res.ok) {
+    /* Record a circuit-breaker failure once all 5xx retries are exhausted.
+       4xx errors reflect client problems, not server overload, so they are
+       deliberately excluded — only sustained 5xx responses open the circuit. */
+    if (res.status >= 500) _circuitBreaker.onFailure(path);
     const err = await res.json().catch(() => ({ error: res.statusText }));
     /* 403 handling:
        - Auth/role denials (missing token, wrong role) trigger logout so the rider is
@@ -318,6 +350,9 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _returnEnve
   }
   /* When returnEnvelope is true, the caller receives the full JSON envelope
      (e.g. to read top-level fields like serverTime alongside data). */
+  /* Successful response — reset the failure counter for this endpoint so a
+     future transient 5xx burst starts counting from zero again. */
+  _circuitBreaker.onSuccess(path);
   if (_returnEnvelope) return json;
   return json.data !== undefined ? json.data : json;
 }
