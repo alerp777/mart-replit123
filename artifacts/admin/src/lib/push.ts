@@ -21,8 +21,8 @@ export async function registerPush(): Promise<void> {
       applicationServerKey: decoded,
     });
 
-    const { apiAbsoluteFetchRaw } = await import("./api");
-    await apiAbsoluteFetchRaw(`${BASE}/api/push/subscribe`, {
+    const { fetchAdminAbsolute } = await import("./adminFetcher");
+    await fetchAdminAbsolute(`${BASE}/api/push/subscribe`, {
       method: "POST",
       body: JSON.stringify({ endpoint: sub.endpoint, p256dh: sub.toJSON().keys?.p256dh, auth: sub.toJSON().keys?.auth, role: "admin" }),
     });

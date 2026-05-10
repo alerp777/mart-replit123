@@ -1,4 +1,4 @@
-import { fetcher, getAdminAccessToken } from "./api";
+import { adminFetch, getAdminAccessToken } from "./adminFetcher";
 import { applyAdminTimingOverrides, type AdminTimingConfig } from "./adminTiming";
 
 export const PLATFORM_DEFAULTS = {
@@ -50,7 +50,7 @@ export const loadPlatformConfig = async () => {
   // use to clear a freshly-saved login token (race condition).
   if (!getAdminAccessToken()) return;
   try {
-    const data = await fetcher("/platform-settings");
+    const data = await adminFetch("/platform-settings");
     const settings: { key: string; value: string }[] = data.settings || [];
     const sym = settings.find(s => s.key === "currency_symbol")?.value;
     if (sym) setCurrencySymbol(sym);

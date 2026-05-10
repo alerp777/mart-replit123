@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import type { Language } from "@workspace/i18n";
 import { DEFAULT_LANGUAGE, LANGUAGE_OPTIONS, isRTL } from "@workspace/i18n";
-import { fetcher, getAdminAccessToken } from "./api";
+import { adminFetch, getAdminAccessToken } from "./adminFetcher";
 import { safeLocalGet, safeLocalSet } from "./safeStorage";
 
 const VALID_LANGS = new Set<string>(LANGUAGE_OPTIONS.map(o => o.value));
@@ -46,7 +46,7 @@ export function useLanguage() {
       }
 
       try {
-        const data = await fetcher("/me/language");
+        const data = await adminFetch("/me/language");
         const serverLang: string | null = data?.language ?? null;
         if (serverLang && VALID_LANGS.has(serverLang)) {
           setLang(serverLang as Language);
@@ -66,7 +66,7 @@ export function useLanguage() {
       }
 
       try {
-        const data = await fetcher("/platform-settings") as { settings?: { key: string; value: string }[] };
+        const data = await adminFetch("/platform-settings") as { settings?: { key: string; value: string }[] };
         const settings: { key: string; value: string }[] = data?.settings || [];
         const platformLang = settings.find(s => s.key === "default_language")?.value;
         if (platformLang && VALID_LANGS.has(platformLang)) {
@@ -89,7 +89,7 @@ export function useLanguage() {
     applyRTL(lang);
     safeLocalSet(STORAGE_KEY, lang);
     try {
-      await fetcher("/me/language", { method: "PUT", body: JSON.stringify({ language: lang }) });
+      await adminFetch("/me/language", { method: "PUT", body: JSON.stringify({ language: lang }) });
     } catch (err) {
       console.error("[useLanguage] /me/language PUT failed:", err);
     }
