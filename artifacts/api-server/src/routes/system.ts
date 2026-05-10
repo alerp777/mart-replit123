@@ -365,6 +365,8 @@ router.get("/snapshots", async (_req, res) => {
    ACTION ENDPOINTS — each snapshots first, then executes
 ═══════════════════════════════════════════════════════════════════════════ */
 
+/* SOFT-DELETE EXEMPTION: demo content wipe — hard deletes intentional. These are
+   admin-only dev/demo reset endpoints, not part of the user/order lifecycle. */
 /* POST /admin/system/reset-demo */
 router.post("/reset-demo", async (_req, res) => {
   const snap = await snapshotBefore("Reset Demo Content", "reset-demo", [
@@ -394,6 +396,8 @@ router.post("/reset-demo", async (_req, res) => {
   });
 });
 
+/* SOFT-DELETE EXEMPTION: transactional data wipe — hard deletes intentional.
+   Admin-only endpoint for clearing demo/test data before re-seeding. */
 /* POST /admin/system/reset-transactional */
 router.post("/reset-transactional", async (_req, res) => {
   const snap = await snapshotBefore("Clear Transactional Data", "reset-transactional", [

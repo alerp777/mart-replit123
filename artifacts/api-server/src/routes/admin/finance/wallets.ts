@@ -282,7 +282,7 @@ router.get("/riders", async (_req, res) => {
   }
 
   const riders = await db.select().from(usersTable).where(
-    ilike(usersTable.roles, "%rider%")
+    and(ilike(usersTable.roles, "%rider%"), isNull(usersTable.deletedAt))
   ).orderBy(desc(usersTable.createdAt));
 
   const riderIds = riders.map(r => r.id);

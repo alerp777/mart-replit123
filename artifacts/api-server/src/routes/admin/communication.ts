@@ -10,7 +10,7 @@ import {
   aiModerationLogsTable,
   platformSettingsTable,
 } from "@workspace/db/schema";
-import { eq, desc, sql, and, count, gte, or } from "drizzle-orm";
+import { eq, desc, sql, and, count, gte, or, isNull } from "drizzle-orm";
 import { generateId } from "../../lib/id.js";
 import { generateRoleTemplate } from "../../services/communicationAI.js";
 import { logger } from "../../lib/logger.js";
@@ -457,9 +457,9 @@ router.get("/communication/ajk-ids", async (req, res) => {
       ? and(condition, sql`${usersTable.roles}::text ILIKE ${"%" + role + "%"}`)
       : condition;
 
-    const users = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, roles: usersTable.roles, ajkId: usersTable.ajkId, commBlocked: usersTable.commBlocked }).from(usersTable).where(filterCondition).orderBy(desc(usersTable.createdAt)).limit(limit).offset(offset);
+    const users = await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, roles: usersTable.roles, ajkId: usersTable.ajkId, commBlocked: usersTable.commBlocked }).from(usersTable).where(and(filterCondition, isNull(usersTable.deletedAt))).orderBy(desc(usersTable.createdAt)).limit(limit).offset(offset);
 
-    const [total] = await db.select({ count: count() }).from(usersTable).where(filterCondition);
+    const [total] = await db.select({ count: count() }).from(usersTable).where(and(filterCondition, isNull(usersTable.deletedAt)));
 
     res.json({ data: users, total: Number(total?.count ?? 0) });
   } catch (e) {

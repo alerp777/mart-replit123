@@ -419,7 +419,7 @@ router.get("/broadcast/recipients/count", async (req, res) => {
   if (error) { sendValidationError(res, error); return; }
 
   const conditions = buildRoleConditions(roles);
-  const [row] = await db.select({ c: count() }).from(usersTable).where(and(...conditions));
+  const [row] = await db.select({ c: count() }).from(usersTable).where(and(...conditions, isNull(usersTable.deletedAt)));
   sendSuccess(res, {
     count: row?.c ?? 0,
     targetRoles: roles.length > 0 ? roles : ["all"],
@@ -435,7 +435,7 @@ router.post("/broadcast", async (req, res) => {
   if (error) { sendValidationError(res, error); return; }
 
   const conditions = buildRoleConditions(roles);
-  const users = await db.select({ id: usersTable.id }).from(usersTable).where(and(...conditions));
+  const users = await db.select({ id: usersTable.id }).from(usersTable).where(and(...conditions, isNull(usersTable.deletedAt)));
   let sent = 0;
   for (const user of users) {
     let localTitle = title as string;
