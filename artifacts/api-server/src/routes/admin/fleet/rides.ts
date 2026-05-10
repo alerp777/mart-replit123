@@ -688,8 +688,8 @@ router.get("/leaderboard", async (_req: Request, res: Response) => {
   })
   .from(usersTable)
   .leftJoin(vendorProfilesTable, eq(usersTable.id, vendorProfilesTable.userId))
-  .leftJoin(ordersTable, and(eq(ordersTable.vendorId, usersTable.id), eq(ordersTable.status, "delivered")))
-  .where(ilike(usersTable.roles, "%vendor%"))
+  .leftJoin(ordersTable, and(eq(ordersTable.vendorId, usersTable.id), eq(ordersTable.status, "delivered"), isNull(ordersTable.deletedAt)))
+  .where(and(ilike(usersTable.roles, "%vendor%"), isNull(usersTable.deletedAt)))
   .groupBy(usersTable.id, vendorProfilesTable.storeName)
   .orderBy(sql`coalesce(sum(${ordersTable.total}),0) desc`)
   .limit(5);
@@ -703,7 +703,7 @@ router.get("/leaderboard", async (_req: Request, res: Response) => {
   })
   .from(usersTable)
   .leftJoin(ridesTable, and(eq(ridesTable.riderId, usersTable.id), eq(ridesTable.status, "completed")))
-  .where(ilike(usersTable.roles, "%rider%"))
+  .where(and(ilike(usersTable.roles, "%rider%"), isNull(usersTable.deletedAt)))
   .groupBy(usersTable.id)
   .orderBy(sql`count(${ridesTable.id}) desc`)
   .limit(5);
@@ -718,7 +718,7 @@ router.get("/leaderboard", async (_req: Request, res: Response) => {
 router.get("/dashboard-export", async (_req: Request, res: Response) => {
   const now = new Date();
   const [[userCount], [orderCount], [rideCount], [revenue], [rideRev]] = await Promise.all([
-    db.select({ count: count() }).from(usersTable),
+    db.select({ count: count() }).from(usersTable).where(isNull(usersTable.deletedAt)),
     db.select({ count: count() }).from(ordersTable).where(isNull(ordersTable.deletedAt)),
     db.select({ count: count() }).from(ridesTable),
     db.select({ total: sum(ordersTable.total) }).from(ordersTable).where(and(eq(ordersTable.status, "delivered"), isNull(ordersTable.deletedAt))),

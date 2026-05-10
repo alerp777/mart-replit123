@@ -60,7 +60,7 @@ router.get("/stats", async (_req, res) => {
     [vendorCount],
     [failedPaymentCount],
   ] = await Promise.all([
-    db.select({ count: count() }).from(usersTable),
+    db.select({ count: count() }).from(usersTable).where(isNull(usersTable.deletedAt)),
     db.select({ count: count() }).from(ordersTable).where(isNull(ordersTable.deletedAt)),
     db.select({ count: count() }).from(ridesTable),
     db.select({ count: count() }).from(pharmacyOrdersTable),
@@ -591,9 +591,9 @@ router.get("/app-overview", async (_req, res) => {
     totalPharmacy, totalParcel,
     settings, adminAccounts,
   ] = await Promise.all([
-    db.select({ c: count() }).from(usersTable),
-    db.select({ c: count() }).from(usersTable).where(eq(usersTable.isActive, true)),
-    db.select({ c: count() }).from(usersTable).where(eq(usersTable.isBanned, true)),
+    db.select({ c: count() }).from(usersTable).where(isNull(usersTable.deletedAt)),
+    db.select({ c: count() }).from(usersTable).where(and(eq(usersTable.isActive, true), isNull(usersTable.deletedAt))),
+    db.select({ c: count() }).from(usersTable).where(and(eq(usersTable.isBanned, true), isNull(usersTable.deletedAt))),
     db.select({ c: count() }).from(ordersTable).where(isNull(ordersTable.deletedAt)),
     db.select({ c: count() }).from(ordersTable).where(and(eq(ordersTable.status, "pending"), isNull(ordersTable.deletedAt))),
     db.select({ c: count() }).from(ridesTable),
@@ -630,7 +630,7 @@ router.get("/all-notifications", async (req, res) => {
   const limit = Math.min(parseInt(String(req.query["limit"] || "100")), 300);
   let userIds: string[] = [];
   if (role) {
-    const users = await db.select({ id: usersTable.id }).from(usersTable).where(ilike(usersTable.roles, `%${role}%`));
+    const users = await db.select({ id: usersTable.id }).from(usersTable).where(and(ilike(usersTable.roles, `%${role}%`), isNull(usersTable.deletedAt)));
     userIds = users.map(u => u.id);
     if (userIds.length === 0) { sendSuccess(res, { notifications: [] }); return; }
   }
@@ -1060,7 +1060,7 @@ router.get("/search", async (req, res) => {
             createdAt: usersTable.createdAt,
           })
           .from(usersTable)
-          .where(or(ilike(usersTable.name, pattern), ilike(usersTable.phone, pattern), ilike(usersTable.email, pattern)))
+          .where(and(or(ilike(usersTable.name, pattern), ilike(usersTable.phone, pattern), ilike(usersTable.email, pattern)), isNull(usersTable.deletedAt)))
           .orderBy(desc(usersTable.createdAt))
           .limit(5)
         )
@@ -2145,6 +2145,7 @@ router.get("/fleet/vendors", async (_req, res) => {
           eq(usersTable.approvalStatus, "approved"),
           isNotNull(vendorProfilesTable.storeLat),
           isNotNull(vendorProfilesTable.storeLng),
+          isNull(usersTable.deletedAt),
         )
       )
       .orderBy(asc(usersTable.name));
@@ -2647,12 +2648,10 @@ router.get("/export/orders", adminAuth, async (req, res) => {
 router.get("/export/users", adminAuth, async (req, res) => {
   try {
     const { role } = req.query;
-    const conditions: SQL[] = [];
+    const conditions: SQL[] = [isNull(usersTable.deletedAt)];
     if (role && role !== "all") conditions.push(sql`${usersTable.roles} LIKE ${"%" + String(role) + "%"}`);
 
-    const users = conditions.length > 0
-      ? await db.select().from(usersTable).where(and(...conditions)).orderBy(desc(usersTable.createdAt)).limit(10000)
-      : await db.select().from(usersTable).orderBy(desc(usersTable.createdAt)).limit(10000);
+    const users = await db.select().from(usersTable).where(and(...conditions)).orderBy(desc(usersTable.createdAt)).limit(10000);
 
     const header = "ID,Name,Phone,Email,Roles,City,Active,Banned,Wallet Balance,Created At";
     const rows = users.map(u => [
@@ -2672,7 +2671,7 @@ router.get("/export/users", adminAuth, async (req, res) => {
 router.get("/export/riders", adminAuth, async (req, res) => {
   try {
     const riders = await db.select().from(usersTable)
-      .where(sql`${usersTable.roles} LIKE '%rider%'`)
+      .where(and(sql`${usersTable.roles} LIKE '%rider%'`, isNull(usersTable.deletedAt)))
       .orderBy(desc(usersTable.createdAt)).limit(5000);
 
     const header = "ID,Name,Phone,Email,City,Online,Active,Banned,Wallet Balance,Cancel Count,Rating,Created At";
@@ -2693,7 +2692,7 @@ router.get("/export/riders", adminAuth, async (req, res) => {
 router.get("/export/vendors", adminAuth, async (req, res) => {
   try {
     const vendors = await db.select().from(usersTable)
-      .where(sql`${usersTable.roles} LIKE '%vendor%'`)
+      .where(and(sql`${usersTable.roles} LIKE '%vendor%'`, isNull(usersTable.deletedAt)))
       .orderBy(desc(usersTable.createdAt)).limit(5000);
 
     const header = "ID,Name,Phone,Email,Store Name,City,Active,Banned,Wallet Balance,Created At";
@@ -2803,8 +2802,8 @@ router.get("/revenue-analytics", adminAuth, async (_req, res) => {
       })
         .from(usersTable)
         .leftJoin(vendorProfilesTable, eq(usersTable.id, vendorProfilesTable.userId))
-        .leftJoin(ordersTable, and(eq(ordersTable.vendorId, usersTable.id), eq(ordersTable.status, "delivered")))
-        .where(ilike(usersTable.roles, "%vendor%"))
+        .leftJoin(ordersTable, and(eq(ordersTable.vendorId, usersTable.id), eq(ordersTable.status, "delivered"), isNull(ordersTable.deletedAt)))
+        .where(and(ilike(usersTable.roles, "%vendor%"), isNull(usersTable.deletedAt)))
         .groupBy(usersTable.id, vendorProfilesTable.storeName)
         .orderBy(sql`coalesce(sum(${ordersTable.total}), 0) desc`)
         .limit(10),
