@@ -24,7 +24,7 @@ import {
   riderProfilesTable,
   serviceZonesTable,
 } from "@workspace/db/schema";
-import { count, lt, eq } from "drizzle-orm";
+import { count, lt, eq, isNull } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { invalidateSettingsCache } from "../middleware/security.js";
 import { adminAuth } from "./admin.js";
@@ -375,7 +375,7 @@ router.post("/reset-demo", async (_req, res) => {
     "products", "users",
   ]);
 
-  await db.delete(ordersTable);
+  await db.update(ordersTable).set({ deletedAt: new Date() }).where(isNull(ordersTable.deletedAt));
   await db.delete(ridesTable);
   await db.delete(pharmacyOrdersTable);
   await db.delete(parcelBookingsTable);
@@ -405,7 +405,7 @@ router.post("/reset-transactional", async (_req, res) => {
     "wallet_transactions", "reviews", "notifications", "flash_deals",
   ]);
 
-  await db.delete(ordersTable);
+  await db.update(ordersTable).set({ deletedAt: new Date() }).where(isNull(ordersTable.deletedAt));
   await db.delete(ridesTable);
   await db.delete(pharmacyOrdersTable);
   await db.delete(parcelBookingsTable);
@@ -445,7 +445,7 @@ router.post("/reset-all", async (_req, res) => {
     "promo_codes", "saved_addresses", "user_settings", "products",
   ]);
 
-  await db.delete(ordersTable);
+  await db.update(ordersTable).set({ deletedAt: new Date() }).where(isNull(ordersTable.deletedAt));
   await db.delete(ridesTable);
   await db.delete(pharmacyOrdersTable);
   await db.delete(parcelBookingsTable);
@@ -457,7 +457,7 @@ router.post("/reset-all", async (_req, res) => {
   await db.delete(promoCodesTable);
   await db.delete(savedAddressesTable);
   await db.delete(userSettingsTable);
-  await db.delete(usersTable);
+  await db.update(usersTable).set({ deletedAt: new Date() }).where(isNull(usersTable.deletedAt));
   const { mart, food } = await reseedProducts();
 
   res.json({
@@ -499,7 +499,7 @@ router.post("/remove-all", async (_req, res) => {
     const snap = await snapshotBefore("Remove All Data", "remove-all", REMOVABLE_TABLES);
 
     await db.transaction(async (tx) => {
-      await tx.delete(ordersTable);
+      await tx.update(ordersTable).set({ deletedAt: new Date() }).where(isNull(ordersTable.deletedAt));
       await tx.delete(ridesTable);
       await tx.delete(pharmacyOrdersTable);
       await tx.delete(parcelBookingsTable);
@@ -516,7 +516,7 @@ router.post("/remove-all", async (_req, res) => {
       await tx.delete(vendorProfilesTable);
       await tx.delete(riderProfilesTable);
       await tx.delete(serviceZonesTable);
-      await tx.delete(usersTable);
+      await tx.update(usersTable).set({ deletedAt: new Date() }).where(isNull(usersTable.deletedAt));
     });
 
     res.json({
@@ -622,7 +622,7 @@ router.post("/seed-demo", async (_req, res) => {
 
   const counts: Record<string, number> = {};
   try {
-    await db.delete(ordersTable);
+    await db.update(ordersTable).set({ deletedAt: new Date() }).where(isNull(ordersTable.deletedAt));
     await db.delete(ridesTable);
     await db.delete(pharmacyOrdersTable);
     await db.delete(parcelBookingsTable);
@@ -639,7 +639,7 @@ router.post("/seed-demo", async (_req, res) => {
     await db.delete(vendorProfilesTable);
     await db.delete(riderProfilesTable);
     await db.delete(serviceZonesTable);
-    await db.delete(usersTable);
+    await db.update(usersTable).set({ deletedAt: new Date() }).where(isNull(usersTable.deletedAt));
 
     for (const u of DEMO_USERS) {
       await db.insert(usersTable).values({
