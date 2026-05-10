@@ -1,6 +1,7 @@
 import { Router } from "express";
 import path from "path";
 import fs from "fs";
+import { storageUpload } from "../../lib/storage.js";
 import { db } from "@workspace/db";
 import {
   usersTable,
@@ -827,11 +828,8 @@ router.post("/uploads/admin", async (req, res) => {
     const ext = mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg";
     const buffer = Buffer.from(base64, "base64");
     if (buffer.length > 10 * 1024 * 1024) { sendError(res, "Image must be under 10MB", 400); return; }
-    const uniqueName = `admin_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-    const uploadsDir = path.resolve(process.cwd(), "uploads");
-    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-    fs.writeFileSync(path.join(uploadsDir, uniqueName), buffer);
-    const url = `/api/uploads/${uniqueName}`;
+    const key = `admin_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    const url = await storageUpload(buffer, key, mimeType);
     sendSuccess(res, { url });
   } catch (e: any) {
     sendError(res, e.message || "Upload failed", 500);

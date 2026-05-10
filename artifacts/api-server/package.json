@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1045.0",
     "@google/genai": "^1.44.0",
     "@sentry/node": "^8.55.2",
     "@workspace/api-zod": "workspace:*",

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { randomUUID } from "crypto";
-import { writeFile, mkdir, unlink } from "fs/promises";
+import { writeFile, unlink } from "fs/promises";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
@@ -11,22 +11,17 @@ import { sendSuccess, sendCreated, sendError, sendNotFound, sendValidationError 
 import { customerAuth, riderAuth, requireRole, getCachedSettings } from "../middleware/security.js";
 import { db } from "@workspace/db";
 import { pharmacyPrescriptionRefsTable } from "@workspace/db/schema";
-import { generateId } from "../lib/id.js";
 import { logger } from "../lib/logger.js";
+import { storageUpload } from "../lib/storage.js";
 
 const execFileAsync = promisify(execFile);
 
 const router: IRouter = Router();
 
-const UPLOADS_DIR = path.resolve(process.cwd(), "uploads");
-
 /* ── Production disk-storage warning ────────────────────────────────────────
-   Files are stored on local disk inside ./uploads/. This works for
-   development but is NOT suitable for production: the directory is not
-   shared across instances, files are lost on container restart, and the
-   container has limited disk space. Configure an object-storage backend
-   (S3-compatible: set STORAGE_BUCKET_URL + STORAGE_ACCESS_KEY +
-   STORAGE_SECRET_KEY) before deploying to production. */
+   Files are stored on local disk inside ./uploads/ as a dev fallback.
+   In production, set STORAGE_BUCKET_URL + STORAGE_ACCESS_KEY +
+   STORAGE_SECRET_KEY to enable S3-compatible object storage. */
 if (process.env.NODE_ENV === "production" && !process.env["STORAGE_BUCKET_URL"]) {
   throw new Error(
     "[uploads] FATAL: Running in production without object storage. " +
@@ -109,10 +104,6 @@ function validateFileMagicBytes(buffer: Buffer, mimeType: string): boolean {
 
 const prescriptionRefMap = new Map<string, string>();
 
-async function ensureDir() {
-  await mkdir(UPLOADS_DIR, { recursive: true });
-}
-
 const MULTER_PERMISSIVE_IMAGE_LIMIT = 50 * 1024 * 1024;
 const MULTER_PERMISSIVE_VIDEO_LIMIT = 500 * 1024 * 1024;
 
@@ -147,22 +138,33 @@ async function maybeCompressImage(buffer: Buffer, mimeType: string): Promise<Buf
   }
 }
 
-/* ── Helper: save a buffer and return the public URL ── */
+/* ── Helper: upload an image buffer and return the public URL ── */
 async function saveBuffer(buffer: Buffer, prefix: string, mimeType: string): Promise<string> {
   const ext = mimeType === "image/png" ? ".png" : mimeType === "image/webp" ? ".webp" : ".jpg";
-  const uniqueName = `${prefix}_${Date.now()}_${randomUUID().slice(0, 8)}${ext}`;
-  await ensureDir();
+  const key = `${prefix}_${Date.now()}_${randomUUID().slice(0, 8)}${ext}`;
   const processed = await maybeCompressImage(buffer, mimeType);
-  await writeFile(path.join(UPLOADS_DIR, uniqueName), processed);
-  return `/api/uploads/${uniqueName}`;
+  return storageUpload(processed, key, mimeType);
 }
 
+/* ── Helper: upload a video buffer and return the public URL ── */
 async function saveVideoBuffer(buffer: Buffer, prefix: string, mimeType: string): Promise<string> {
   const ext = mimeType === "video/quicktime" ? ".mov" : mimeType === "video/webm" ? ".webm" : ".mp4";
-  const uniqueName = `${prefix}_${Date.now()}_${randomUUID().slice(0, 8)}${ext}`;
-  await ensureDir();
-  await writeFile(path.join(UPLOADS_DIR, uniqueName), buffer);
-  return `/api/uploads/${uniqueName}`;
+  const key = `${prefix}_${Date.now()}_${randomUUID().slice(0, 8)}${ext}`;
+  return storageUpload(buffer, key, mimeType);
+}
+
+/* ── Helper: upload an audio buffer and return the public URL ── */
+async function saveAudioBuffer(buffer: Buffer, mimeType: string): Promise<string> {
+  const baseType = mimeType.split(";")[0]!.trim();
+  const ext =
+    baseType === "audio/mpeg" ? ".mp3"
+    : baseType === "audio/ogg" ? ".ogg"
+    : baseType === "audio/wav" ? ".wav"
+    : baseType === "audio/aac" ? ".aac"
+    : baseType === "audio/mp4" ? ".m4a"
+    : ".webm";
+  const key = `audio_${Date.now()}_${randomUUID().slice(0, 8)}${ext}`;
+  return storageUpload(buffer, key, baseType);
 }
 
 /* ── POST /uploads — JSON base64 upload (customers / super-app) ── */
@@ -505,11 +507,7 @@ router.post(
         sendValidationError(res, "Only webm, ogg, mp3, mp4, wav, and aac audio files are allowed");
         return;
       }
-      const ext = baseType === "audio/mpeg" ? ".mp3" : baseType === "audio/ogg" ? ".ogg" : baseType === "audio/wav" ? ".wav" : baseType === "audio/aac" ? ".aac" : baseType === "audio/mp4" ? ".m4a" : ".webm";
-      const uniqueName = `audio_${Date.now()}_${randomUUID().slice(0, 8)}${ext}`;
-      await ensureDir();
-      await writeFile(path.join(UPLOADS_DIR, uniqueName), buffer);
-      const url = `/api/uploads/${uniqueName}`;
+      const url = await saveAudioBuffer(buffer, mimetype);
       sendCreated(res, { url, filename: originalname || path.basename(url), size: buffer.length });
     } catch (e: unknown) {
       sendError(res, e instanceof Error ? e.message : "Audio upload failed");

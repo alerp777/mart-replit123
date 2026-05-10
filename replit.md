@@ -197,12 +197,28 @@ Generate production values with: `node -e "console.log(require('crypto').randomB
 | **PM2 ecosystem** | `ecosystem.config.cjs` updated with all five apps: API server, admin (served by API), vendor, rider, and customer mobile-web. |
 | **Object storage guard** | Missing `STORAGE_BUCKET_URL` in production now throws a fatal error at module load time instead of just warning. |
 
+### S3-Compatible Object Storage (Task #6 — 2025)
+
+| Area | What changed |
+|---|---|
+| **Storage adapter** | New `artifacts/api-server/src/lib/storage.ts` module. Wraps `@aws-sdk/client-s3`. When `STORAGE_BUCKET_URL` + `STORAGE_ACCESS_KEY` + `STORAGE_SECRET_KEY` are set, all file uploads go to the S3 bucket via `PutObjectCommand`. Falls back to `./uploads/` on local disk in development. |
+| **Image uploads** | `saveBuffer()` in `uploads.ts` now calls `storageUpload()`. All image routes (base64 JSON, multipart proof, registration, prescription) use S3 when configured. |
+| **Video/audio uploads** | `saveVideoBuffer()` and `saveAudioBuffer()` both route through `storageUpload()`. Videos still use a local temp file for `ffprobe` duration check before upload. |
+| **Admin uploads** | `POST /api/admin/uploads/admin` in `admin/content.ts` also uses `storageUpload()`. |
+| **Returned URLs** | In S3 mode, returned URLs point directly to `${STORAGE_BUCKET_URL}/${key}`. In local mode, URLs remain `/api/uploads/${key}`. |
+| **Provider support** | `forcePathStyle: true` ensures compatibility with all S3-compatible providers (AWS, DigitalOcean Spaces, Cloudflare R2, MinIO, Backblaze B2). |
+
 **New required env vars — add in Replit Secrets panel:**
 - `ALLOWED_DOMAINS` — comma-separated domain list (no scheme) for Socket.IO CORS in production (e.g. `example.com,www.example.com`). Falls back to `REPLIT_DOMAINS` for Replit-hosted environments.
-- `STORAGE_BUCKET_URL` — S3-compatible bucket URL required in production for file uploads (e.g. `https://bucket.s3.amazonaws.com`).
+- `STORAGE_BUCKET_URL` — S3-compatible bucket public base URL required in production (e.g. `https://bucket.s3.amazonaws.com` or `https://s3.us-east-1.amazonaws.com/my-bucket`). Files are uploaded here; returned URLs point to this base.
+- `STORAGE_ACCESS_KEY` — Access key ID for the S3-compatible bucket.
+- `STORAGE_SECRET_KEY` — Secret access key for the S3-compatible bucket.
 
 **New optional env vars:**
 - `DB_POOL_MAX` — maximum PostgreSQL pool connections (default: `10`).
+- `STORAGE_BUCKET_NAME` — Override for the bucket name; auto-extracted from `STORAGE_BUCKET_URL` path segment if not set.
+- `STORAGE_ENDPOINT` — Override for the S3 endpoint URL; auto-derived from `STORAGE_BUCKET_URL` host if not set. Useful for DigitalOcean Spaces, Cloudflare R2, MinIO, etc.
+- `STORAGE_REGION` — S3 region (default: `us-east-1`).
 
 ### Validation and Support Scripts
 The API server includes a `check-permissions` validation script used by the Replit workflow, and the monorepo includes launcher scripts for Replit, Codespaces, VPS, and local development.
