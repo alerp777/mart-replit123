@@ -4202,7 +4202,8 @@ router.post("/magic-link/send", async (req, res) => {
 
   const rawToken = crypto.randomBytes(32).toString("hex");
   const tokenHash = hashPassword(rawToken);
-  const expiresAt = new Date(Date.now() + getAccessTokenTtlSec() * 1000);
+  const magicLinkTtlMin = Math.max(5, parseInt(settings["auth_magic_link_ttl_min"] ?? "30", 10));
+  const expiresAt = new Date(Date.now() + magicLinkTtlMin * 60 * 1000);
 
   await db.insert(magicLinkTokensTable).values({
     id: generateId(),

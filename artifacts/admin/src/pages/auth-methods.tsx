@@ -528,6 +528,35 @@ export default function AuthMethodsPage() {
                           })}
                         </div>
 
+                        {/* magic link TTL */}
+                        {method.key === "auth_magic_link_enabled" && (
+                          <div className="mt-4 pt-4 border-t border-slate-100">
+                            <div className="flex items-center gap-2 mb-2.5">
+                              <Lock className="w-3.5 h-3.5 text-slate-500" />
+                              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                                Link Expiry
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-semibold text-slate-600">
+                                Magic link TTL (minutes)
+                              </label>
+                              <Input
+                                type="number"
+                                min={5}
+                                max={1440}
+                                value={localValues["auth_magic_link_ttl_min"] ?? "30"}
+                                onChange={e => setValue("auth_magic_link_ttl_min", e.target.value)}
+                                placeholder="30"
+                                className="h-9 text-xs bg-slate-50 border-slate-200 w-32"
+                              />
+                              <p className="text-[10px] text-slate-400">
+                                How long the one-click login link stays valid after being sent. Default: 30 minutes.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
                         {/* required credentials */}
                         {method.requiresCredentials && (
                           <div className="mt-4 pt-4 border-t border-slate-100">
