@@ -379,7 +379,7 @@ router.patch("/users/:id", requirePermission("users.edit"), async (req, res) => 
   }
 });
 
-/* ── Pending Approval Users ── */
+
 router.get("/users/pending", async (_req, res) => {
   const rows = await db
     .select({

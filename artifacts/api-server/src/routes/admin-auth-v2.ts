@@ -19,8 +19,8 @@ import { logger } from '../lib/logger.js';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { db } from '@workspace/db';
-import { adminAccountsTable } from '@workspace/db/schema';
-import { eq } from 'drizzle-orm';
+import { adminAccountsTable, usersTable, ordersTable, walletTransactionsTable } from '@workspace/db/schema';
+import { eq, count, and, sql } from 'drizzle-orm';
 import {
   adminLogin,
   verify2fa,
@@ -1000,6 +1000,53 @@ router.delete(
     res.clearCookie('csrf_token', { path: '/' });
 
     res.json({ success: true, message: 'All sessions revoked' });
+  }
+);
+
+/**
+ * GET /api/admin/pending-counts
+ * Returns sidebar badge counts for pending riders, orders, withdrawals, and deposits.
+ * Single DB round-trip using parallel queries.
+ */
+router.get(
+  '/pending-counts',
+  authenticateAdmin,
+  async (_req: Request, res: Response) => {
+    try {
+      const [[pendingRiders], [pendingOrders], [pendingWithdrawals], [pendingDeposits]] =
+        await Promise.all([
+          db.select({ count: count() })
+            .from(usersTable)
+            .where(and(
+              eq(usersTable.approvalStatus, 'pending'),
+              sql`roles LIKE '%rider%'`,
+            )),
+          db.select({ count: count() })
+            .from(ordersTable)
+            .where(eq(ordersTable.status, 'pending')),
+          db.select({ count: count() })
+            .from(walletTransactionsTable)
+            .where(and(
+              eq(walletTransactionsTable.type, 'withdrawal'),
+              eq(walletTransactionsTable.reference, 'pending'),
+            )),
+          db.select({ count: count() })
+            .from(walletTransactionsTable)
+            .where(and(
+              sql`type IN ('topup', 'deposit')`,
+              eq(walletTransactionsTable.reference, 'pending'),
+            )),
+        ]);
+      res.json({
+        pendingRiders:     Number(pendingRiders?.count     ?? 0),
+        pendingOrders:     Number(pendingOrders?.count     ?? 0),
+        pendingWithdrawals: Number(pendingWithdrawals?.count ?? 0),
+        pendingDeposits:   Number(pendingDeposits?.count   ?? 0),
+      });
+    } catch (err) {
+      logger.warn({ err }, '[pending-counts] query failed');
+      res.json({ pendingRiders: 0, pendingOrders: 0, pendingWithdrawals: 0, pendingDeposits: 0 });
+    }
   }
 );
 

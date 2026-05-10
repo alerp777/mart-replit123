@@ -7,6 +7,7 @@ import {
   emitRideUpdate, emitRideDispatchUpdate,
   broadcastRide, cleanupNotifiedRiders,
 } from "./helpers.js";
+import { rideNotifiedRidersTable } from "@workspace/db/schema";
 
 const router = Router();
 

@@ -89,6 +89,10 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
   const [sosCount, setSosCount] = useState(0);
   const [errorCount, setErrorCount] = useState(0);
+  const [pendingRidersCount, setPendingRidersCount] = useState(0);
+  const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
+  const [pendingWithdrawalsCount, setPendingWithdrawalsCount] = useState(0);
+  const [pendingDepositsCount, setPendingDepositsCount] = useState(0);
   const socketRef = useRef<Socket | null>(null);
   const langRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
@@ -135,6 +139,19 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       .then((data: { count?: number }) => { if (typeof data.count === "number") setErrorCount(data.count); })
       .catch((err) => { console.error("[AdminLayout] Error count fetch failed:", err); });
 
+    // Fetch all pending badge counts in one round-trip
+    const fetchPendingCounts = () => {
+      adminFetch("/pending-counts")
+        .then((data: { pendingRiders?: number; pendingOrders?: number; pendingWithdrawals?: number; pendingDeposits?: number }) => {
+          if (typeof data.pendingRiders === "number") setPendingRidersCount(data.pendingRiders);
+          if (typeof data.pendingOrders === "number") setPendingOrdersCount(data.pendingOrders);
+          if (typeof data.pendingWithdrawals === "number") setPendingWithdrawalsCount(data.pendingWithdrawals);
+          if (typeof data.pendingDeposits === "number") setPendingDepositsCount(data.pendingDeposits);
+        })
+        .catch((err) => { console.error("[AdminLayout] Pending counts fetch failed:", err); });
+    };
+    fetchPendingCounts();
+
     const errorInterval = setInterval(() => {
       adminFetch("/error-reports/new-count")
         .then((data: { count?: number }) => { if (typeof data.count === "number") setErrorCount(data.count); })
@@ -156,6 +173,26 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       if ("vibrate" in navigator) navigator.vibrate([200, 100, 200]);
     });
     socket.on("sos:resolved", () => setSosCount(c => Math.max(0, c - 1)));
+
+    // Pending orders: increment on new order, refresh on any status update
+    socket.on("order:new", (data: { status?: string }) => {
+      if (!data || data.status === "pending") setPendingOrdersCount(c => c + 1);
+    });
+    socket.on("order:update", (data: { status?: string }) => {
+      // When an order leaves pending state, decrement; re-fetch to stay accurate
+      if (data?.status && data.status !== "pending") {
+        fetchPendingCounts();
+      }
+    });
+
+    // Pending rider approvals: any rider status change → refresh
+    socket.on("rider:status", () => { fetchPendingCounts(); });
+
+    // Pending withdrawals/deposits: refresh when one is approved/rejected
+    socket.on("wallet:deposit-approved", () => { fetchPendingCounts(); });
+    socket.on("wallet:withdrawal-approved", () => { fetchPendingCounts(); });
+    socket.on("wallet:withdrawal-rejected", () => { fetchPendingCounts(); });
+
     return () => { socket.disconnect(); socketRef.current = null; cleanupErrorInterval(); };
   }, [state.accessToken]);
 
@@ -498,7 +535,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                     const Icon = item.icon;
                     const showSosBadge = item.sosBadge && sosCount > 0;
                     const showErrorBadge = item.errorBadge && errorCount > 0;
-                    const hasBadge = showSosBadge || showErrorBadge;
+                    const showPendingRidersBadge = item.pendingRidersBadge && pendingRidersCount > 0;
+                    const showPendingOrdersBadge = item.pendingOrdersBadge && pendingOrdersCount > 0;
+                    const showPendingWithdrawalsBadge = item.pendingWithdrawalsBadge && pendingWithdrawalsCount > 0;
+                    const showPendingDepositsBadge = item.pendingDepositsBadge && pendingDepositsCount > 0;
+                    const hasBadge = showSosBadge || showErrorBadge || showPendingRidersBadge || showPendingOrdersBadge || showPendingWithdrawalsBadge || showPendingDepositsBadge;
                     const isFav = favorites.includes(item.href);
 
                     const itemNode = (
@@ -539,7 +580,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                           <div className="relative shrink-0" style={{ margin: showMini ? 0 : "0 10px 0 6px" }}>
                             <Icon
                               className="w-[18px] h-[18px] transition-colors duration-150"
-                              style={{ color: active ? group.color : showSosBadge ? "#EF4444" : showErrorBadge ? "#F59E0B" : "rgba(255,255,255,0.38)" }}
+                              style={{ color: active ? group.color : showSosBadge ? "#EF4444" : showErrorBadge ? "#F59E0B" : showPendingRidersBadge ? "#3B82F6" : showPendingOrdersBadge ? "#F97316" : showPendingWithdrawalsBadge ? "#22C55E" : showPendingDepositsBadge ? "#06B6D4" : "rgba(255,255,255,0.38)" }}
                             />
                             {showSosBadge && (
                               <>
@@ -552,6 +593,26 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                             {showErrorBadge && !showSosBadge && (
                               <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-amber-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
                                 {errorCount > 99 ? "99+" : errorCount}
+                              </span>
+                            )}
+                            {showPendingRidersBadge && !showSosBadge && !showErrorBadge && (
+                              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-blue-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
+                                {pendingRidersCount > 99 ? "99+" : pendingRidersCount}
+                              </span>
+                            )}
+                            {showPendingOrdersBadge && !showSosBadge && !showErrorBadge && !showPendingRidersBadge && (
+                              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-orange-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
+                                {pendingOrdersCount > 99 ? "99+" : pendingOrdersCount}
+                              </span>
+                            )}
+                            {showPendingWithdrawalsBadge && !showSosBadge && !showErrorBadge && (
+                              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-green-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
+                                {pendingWithdrawalsCount > 99 ? "99+" : pendingWithdrawalsCount}
+                              </span>
+                            )}
+                            {showPendingDepositsBadge && !showSosBadge && !showErrorBadge && (
+                              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-cyan-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
+                                {pendingDepositsCount > 99 ? "99+" : pendingDepositsCount}
                               </span>
                             )}
                           </div>
@@ -575,6 +636,26 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                               {showErrorBadge && !showSosBadge && (
                                 <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full" style={{ background: "rgba(245,158,11,0.2)", color: "#FCD34D" }}>
                                   {errorCount > 99 ? "99+" : errorCount}
+                                </span>
+                              )}
+                              {showPendingRidersBadge && !showSosBadge && !showErrorBadge && (
+                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full" style={{ background: "rgba(59,130,246,0.2)", color: "#93C5FD" }}>
+                                  {pendingRidersCount > 99 ? "99+" : pendingRidersCount}
+                                </span>
+                              )}
+                              {showPendingOrdersBadge && !showSosBadge && !showErrorBadge && !showPendingRidersBadge && (
+                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full" style={{ background: "rgba(249,115,22,0.2)", color: "#FDBA74" }}>
+                                  {pendingOrdersCount > 99 ? "99+" : pendingOrdersCount}
+                                </span>
+                              )}
+                              {showPendingWithdrawalsBadge && !showSosBadge && !showErrorBadge && (
+                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.2)", color: "#86EFAC" }}>
+                                  {pendingWithdrawalsCount > 99 ? "99+" : pendingWithdrawalsCount}
+                                </span>
+                              )}
+                              {showPendingDepositsBadge && !showSosBadge && !showErrorBadge && (
+                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full" style={{ background: "rgba(6,182,212,0.2)", color: "#67E8F9" }}>
+                                  {pendingDepositsCount > 99 ? "99+" : pendingDepositsCount}
                                 </span>
                               )}
                               {/* Favorite star — visible on hover, persisted on click. Hidden when mini. */}

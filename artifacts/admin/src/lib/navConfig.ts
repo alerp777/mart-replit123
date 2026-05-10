@@ -88,6 +88,14 @@ export type NavItem = {
   sosBadge?: boolean;
   /** Show amber dot when there are uncleared error reports. */
   errorBadge?: boolean;
+  /** Show blue dot when there are pending rider approval requests. */
+  pendingRidersBadge?: boolean;
+  /** Show orange dot when there are pending orders awaiting processing. */
+  pendingOrdersBadge?: boolean;
+  /** Show green dot when there are pending withdrawal requests. */
+  pendingWithdrawalsBadge?: boolean;
+  /** Show teal dot when there are pending deposit/top-up requests. */
+  pendingDepositsBadge?: boolean;
   /**
    * RBAC permission(s) gating this item; super always sees everything.
    * Layout reads this lazily — kept here so a permission audit can be
@@ -124,7 +132,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     labelKey: "navOperations" as TranslationKey,
     color: "#F59E0B",
     items: [
-      { nameKey: "navOrders",        href: "/orders",          icon: ShoppingBag, requirePermission: "orders.view" },
+      { nameKey: "navOrders",        href: "/orders",          icon: ShoppingBag, requirePermission: "orders.view", pendingOrdersBadge: true },
       { nameKey: "navRides",         href: "/rides",           icon: Car,         requirePermission: "fleet.rides.view" },
       { nameKey: "navVanService",    href: "/van",             icon: Bus,         requirePermission: "fleet.rides.view" },
       { nameKey: "navPharmacy",      href: "/pharmacy",        icon: Pill,        requirePermission: "fleet.pharmacy.view" },
@@ -138,7 +146,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     color: "#3B82F6",
     items: [
       { nameKey: "navUserPermissions", href: "/users",   icon: Users,    requirePermission: "users.view" },
-      { nameKey: "navRiders" as TranslationKey, href: "/riders", icon: Bike, requirePermission: "fleet.rides.view" },
+      { nameKey: "navRiders" as TranslationKey, href: "/riders", icon: Bike, requirePermission: "fleet.rides.view", pendingRidersBadge: true },
       { nameKey: "navVendors",         href: "/vendors", icon: Store,    requirePermission: "vendors.view" },
       { nameKey: "navKyc",             href: "/kyc",     icon: UserCheck, requirePermission: "finance.kyc.view" },
     ],
@@ -160,8 +168,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     color: "#22C55E",
     items: [
       { nameKey: "navTransactions",                       href: "/transactions",     icon: Receipt,    requirePermission: "finance.transactions.view" },
-      { nameKey: "navWithdrawals",                        href: "/withdrawals",      icon: Wallet,     requirePermission: "finance.withdrawals.view" },
-      { nameKey: "navDepositRequests",                    href: "/deposit-requests", icon: CreditCard, requirePermission: "finance.deposits.review" },
+      { nameKey: "navWithdrawals",                        href: "/withdrawals",      icon: Wallet,     requirePermission: "finance.withdrawals.view", pendingWithdrawalsBadge: true },
+      { nameKey: "navDepositRequests",                    href: "/deposit-requests", icon: CreditCard, requirePermission: "finance.deposits.review", pendingDepositsBadge: true },
       { nameKey: "navWalletTransfers" as TranslationKey,  href: "/wallet-transfers", icon: Wallet,     requirePermission: "finance.transactions.view" },
       { nameKey: "navLoyaltyPoints" as TranslationKey,    href: "/loyalty",          icon: Star,       requirePermission: "promotions.view" },
     ],
