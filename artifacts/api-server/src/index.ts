@@ -4,6 +4,7 @@ import net from 'net';
 import { execSync } from 'child_process';
 import { createServer, runStartupTasks } from "./app.js";
 import { startScheduler, stopScheduler } from "./scheduler.js";
+import { waitForRedisReady } from "./lib/redis.js";
 
 /* ── Sentry error tracking ───────────────────────────────────────────────────
    Imported directly (no dynamic import) so initialization happens synchronously
@@ -235,6 +236,9 @@ async function main() {
   } else {
     logger.info(`[port:check] Primary port ${PORT} is available`);
   }
+
+  /* Redis startup connectivity check — fatal in production if unreachable */
+  await waitForRedisReady();
 
   /* Seed runtime config from DB so a previously-rotated ADMIN_SECRET
      takes effect on restart without requiring an env-var change. */
