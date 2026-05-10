@@ -2626,9 +2626,8 @@ router.get("/export/orders", adminAuth, async (req, res) => {
     if (dateFrom) conditions.push(gte(ordersTable.createdAt, new Date(String(dateFrom))));
     if (dateTo) conditions.push(lte(ordersTable.createdAt, new Date(String(dateTo) + "T23:59:59")));
 
-    const orders = conditions.length > 0
-      ? await db.select().from(ordersTable).where(and(...conditions)).orderBy(desc(ordersTable.createdAt)).limit(5000)
-      : await db.select().from(ordersTable).orderBy(desc(ordersTable.createdAt)).limit(5000);
+    conditions.push(isNull(ordersTable.deletedAt));
+    const orders = await db.select().from(ordersTable).where(and(...conditions)).orderBy(desc(ordersTable.createdAt)).limit(5000);
 
     const header = "ID,Type,Status,Total,Payment Method,User ID,Vendor ID,Rider ID,Delivery Address,Created At";
     const rows = orders.map(o => [
@@ -2767,7 +2766,7 @@ router.get("/revenue-analytics", adminAuth, async (_req, res) => {
         total: sql<string>`coalesce(sum(${ordersTable.total}), 0)`,
       })
         .from(ordersTable)
-        .where(and(eq(ordersTable.status, "delivered"), gte(ordersTable.createdAt, windowStart)))
+        .where(and(eq(ordersTable.status, "delivered"), gte(ordersTable.createdAt, windowStart), isNull(ordersTable.deletedAt)))
         .groupBy(sql`date_trunc('month', ${ordersTable.createdAt})`)
         .orderBy(sql`date_trunc('month', ${ordersTable.createdAt})`),
 
@@ -2789,7 +2788,7 @@ router.get("/revenue-analytics", adminAuth, async (_req, res) => {
         .groupBy(sql`date_trunc('month', ${pharmacyOrdersTable.createdAt})`)
         .orderBy(sql`date_trunc('month', ${pharmacyOrdersTable.createdAt})`),
 
-      db.select({ total: sum(ordersTable.total) }).from(ordersTable).where(eq(ordersTable.status, "delivered")),
+      db.select({ total: sum(ordersTable.total) }).from(ordersTable).where(and(eq(ordersTable.status, "delivered"), isNull(ordersTable.deletedAt))),
       db.select({ total: sum(ridesTable.fare) }).from(ridesTable).where(eq(ridesTable.status, "completed")),
       db.select({ total: sum(pharmacyOrdersTable.total) }).from(pharmacyOrdersTable).where(eq(pharmacyOrdersTable.status, "delivered")),
 
