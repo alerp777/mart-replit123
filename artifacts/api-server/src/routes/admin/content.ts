@@ -275,6 +275,76 @@ router.post("/products", async (req, res) => {
   sendCreated(res, { ...product!, price: parseFloat(product!.price) });
 });
 
+/* ── POST /products/bulk-refill-reminder — notify vendors of selected low-stock products ── */
+router.post("/products/bulk-refill-reminder", adminAuth, async (req, res) => {
+  const { productIds } = req.body as { productIds?: string[] };
+  if (!Array.isArray(productIds) || productIds.length === 0) {
+    sendValidationError(res, "productIds must be a non-empty array");
+    return;
+  }
+  const { inArray } = await import("drizzle-orm");
+  const prods = await db
+    .select({ id: productsTable.id, name: productsTable.name, vendorId: productsTable.vendorId })
+    .from(productsTable)
+    .where(inArray(productsTable.id, productIds));
+
+  /* Group product names by vendor, skip system-owned products */
+  const vendorProductMap = new Map<string, string[]>();
+  for (const p of prods) {
+    if (!p.vendorId || p.vendorId === SYSTEM_VENDOR_ID) continue;
+    const names = vendorProductMap.get(p.vendorId) ?? [];
+    names.push(p.name);
+    vendorProductMap.set(p.vendorId, names);
+  }
+
+  const notifiedVendorIds: string[] = [];
+  const failedVendorIds: string[] = [];
+
+  for (const [vendorId, productNames] of vendorProductMap) {
+    const [vendor] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, vendorId)).limit(1);
+    if (!vendor) { failedVendorIds.push(vendorId); continue; }
+
+    /* One combined in-app notification per vendor listing all affected products */
+    const body = productNames.length === 1
+      ? `Restock needed: ${productNames[0]} is running low. Please refill inventory.`
+      : `Restock needed: ${productNames.join(", ")} are running low. Please refill inventory.`;
+
+    let delivered = false;
+    try {
+      await db.insert(notificationsTable).values({
+        id: generateId(),
+        userId: vendorId,
+        title: "Restock Needed",
+        body,
+        type: "system",
+        icon: "alert-circle-outline",
+      });
+      delivered = true;
+    } catch (e) {
+      logger.warn({ err: e, vendorId }, "[bulk-refill-reminder] in-app notification insert failed");
+    }
+
+    try {
+      await sendPushToUsers([vendorId], { title: "Restock Needed", body });
+    } catch (e) {
+      logger.warn({ err: e, vendorId }, "[bulk-refill-reminder] push send failed");
+    }
+
+    if (delivered) {
+      notifiedVendorIds.push(vendorId);
+    } else {
+      failedVendorIds.push(vendorId);
+    }
+  }
+
+  sendSuccess(res, {
+    notified: notifiedVendorIds.length,
+    vendorIds: notifiedVendorIds,
+    failed: failedVendorIds.length,
+    failedVendorIds,
+  });
+});
+
 /* ── PATCH /products/bulk — single atomic bulk update for price/category/stock ── */
 router.patch("/products/bulk", async (req, res) => {
   const { ids, update } = req.body as { ids: string[]; update: { price?: number; category?: string; inStock?: boolean; stock?: number } };

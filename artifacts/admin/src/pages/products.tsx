@@ -297,6 +297,7 @@ export default function Products() {
   const [bulkCategory, setBulkCategory] = useState("");
   const [bulkStock, setBulkStock] = useState<"" | "in" | "out">("");
   const [bulkApplying, setBulkApplying] = useState(false);
+  const [refillSending, setRefillSending] = useState(false);
 
   const [pricingRules, setPricingRules] = useState<Array<{ id: string; name: string; type: string; value: string; category: string; active: boolean }>>([]);
   const [pricingLoading, setPricingLoading] = useState(false);
@@ -540,10 +541,17 @@ export default function Products() {
     });
   }, []);
 
+  const LOW_STOCK_THRESHOLD = 5;
+
   const filtered = useMemo(() => {
     const base = products.filter((p: ProductRow) =>
       (typeFilter === "all" || p.type === typeFilter) &&
-      (stockFilter === "all" || (stockFilter === "in" ? p.inStock : !p.inStock)) &&
+      (stockFilter === "all"
+        || (stockFilter === "in" ? p.inStock : stockFilter === "out" ? !p.inStock
+          : stockFilter === "low"
+            ? p.stock !== undefined && p.stock > 0 && p.stock < LOW_STOCK_THRESHOLD && p.inStock
+            : !p.inStock)
+      ) &&
       (!vendorFilter || (p.vendorName || "").toLowerCase().includes(vendorFilter.toLowerCase())) &&
       (p.name.toLowerCase().includes(q) || (p.category || "").toLowerCase().includes(q))
     );
@@ -1149,6 +1157,14 @@ export default function Products() {
                   {s.l}
                 </button>
               ))}
+              <button
+                onClick={() => setStockFilter(stockFilter === "low" ? "all" : "low")}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors border flex items-center gap-1.5 ${
+                  stockFilter === "low" ? "bg-amber-500 text-white border-amber-500" : "bg-muted/30 border-border/50 hover:border-amber-300 text-muted-foreground"
+                }`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5" /> Low Stock
+              </button>
             </div>
           </Card>
 
@@ -1204,6 +1220,34 @@ export default function Products() {
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="secondary" className="h-8 text-xs" onClick={() => setShowBulkEdit(true)} disabled={!canWrite}>
                   <Edit className="w-3.5 h-3.5 mr-1" /> Bulk Edit
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-8 text-xs bg-amber-500 hover:bg-amber-600 text-white border-0"
+                  disabled={refillSending || !canWrite}
+                  onClick={async () => {
+                    setRefillSending(true);
+                    try {
+                      const result = await adminFetch("/products/bulk-refill-reminder", {
+                        method: "POST",
+                        body: JSON.stringify({ productIds: Array.from(selectedProductIds) }),
+                      }) as { notified: number; vendorIds: string[]; failed: number; failedVendorIds: string[] };
+                      if (result.failed > 0 && result.notified === 0) {
+                        toast({ title: "Refill reminder failed", description: `Could not reach ${result.failed} vendor${result.failed !== 1 ? "s" : ""}`, variant: "destructive" });
+                      } else if (result.failed > 0) {
+                        toast({ title: `Refill reminder sent to ${result.notified} vendor${result.notified !== 1 ? "s" : ""}`, description: `Could not reach ${result.failed} vendor${result.failed !== 1 ? "s" : ""}` });
+                      } else {
+                        toast({ title: `Refill reminder sent to ${result.notified} vendor${result.notified !== 1 ? "s" : ""}` });
+                      }
+                    } catch (e: unknown) {
+                      toast({ title: "Refill reminder failed", description: e instanceof Error ? e.message : "Unknown error", variant: "destructive" });
+                    } finally {
+                      setRefillSending(false);
+                    }
+                  }}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 mr-1" />
+                  {refillSending ? "Sending…" : "Refill Reminder"}
                 </Button>
                 <Button size="sm" variant="ghost" className="h-8 text-white hover:bg-white/20 text-xs" onClick={() => setSelectedProductIds(new Set())}>
                   <X className="w-3.5 h-3.5" /> Clear
