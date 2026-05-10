@@ -82,6 +82,7 @@
     "@workspace/api-client-react": "workspace:*",
     "@workspace/i18n": "workspace:*",
     "@workspace/service-constants": "workspace:*",
+    "@workspace/ui": "workspace:*",
     "class-variance-authority": "catalog:",
     "clsx": "catalog:",
     "cmdk": "^1.1.1",

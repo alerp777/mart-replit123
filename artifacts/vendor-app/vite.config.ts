@@ -50,6 +50,7 @@ export default defineConfig({
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
       "@assets": path.resolve(import.meta.dirname, "..", "..", "assets"),
+      "@workspace/ui": path.resolve(import.meta.dirname, "../../lib/ui/src"),
     },
     dedupe: ["react", "react-dom"],
   },
@@ -87,6 +88,7 @@ export default defineConfig({
     fs: {
       strict: true,
       deny: ["**/.*"],
+      allow: ["../../lib/ui"],
     },
   },
   preview: {

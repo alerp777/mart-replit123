@@ -59,6 +59,7 @@ export default defineConfig({
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
       "@assets": path.resolve(import.meta.dirname, "..", "..", "assets"),
+      "@workspace/ui": path.resolve(import.meta.dirname, "../../lib/ui/src"),
       // Force all packages (including react-leaflet) to use the same React instance
       "react": path.resolve(import.meta.dirname, "node_modules/react"),
       "react-dom": path.resolve(import.meta.dirname, "node_modules/react-dom"),
@@ -123,6 +124,7 @@ export default defineConfig({
     fs: {
       strict: true,
       deny: ["**/.*"],
+      allow: ["../../lib/ui"],
     },
   },
   preview: {
