@@ -7,15 +7,26 @@
  */
 import type { ProductType } from "./productType";
 
+export type ProductApprovalStatus = (typeof ProductApprovalStatus)[keyof typeof ProductApprovalStatus];
+
+export const ProductApprovalStatus = {
+  pending: "pending",
+  approved: "approved",
+  rejected: "rejected",
+} as const;
+
 export interface Product {
   id: string;
   name: string;
   description?: string;
-  price: number;
-  originalPrice?: number;
+  price: string;
+  originalPrice?: string;
   category: string;
   type: ProductType;
   image?: string;
+  images?: string[];
+  stock?: number;
+  approvalStatus?: ProductApprovalStatus;
   videoUrl?: string | null;
   vendorId?: string;
   vendorName?: string;

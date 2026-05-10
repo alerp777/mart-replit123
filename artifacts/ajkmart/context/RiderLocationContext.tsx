@@ -79,7 +79,7 @@ const RiderLocationContext = createContext<RiderLocationContextType | null>(null
 
 export function RiderLocationProvider({ children }: { children: React.ReactNode }) {
   const { user, token } = useAuth();
-  const isRider = user?.role === "rider";
+  const isRider = (user?.roles ?? []).includes("rider");
 
   const [isOnline, setIsOnline] = useState(false);
   const [hasActiveTask, setHasActiveTask] = useState(false);

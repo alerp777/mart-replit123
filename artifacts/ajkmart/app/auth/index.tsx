@@ -187,12 +187,20 @@ export default function AuthScreen() {
     }
   };
 
-  const navigateAfterLogin = async (userOrRole: AppUser | { role?: string; roles?: string } | string | null | undefined) => {
+  const navigateAfterLogin = async (userOrRole: AppUser | { roles?: string[] | string } | string | null | undefined) => {
     /* Normalise: biometric path returns role string; other paths pass user object */
-    const roleUser: { role?: string; roles?: string } =
-      typeof userOrRole === "string" ? { role: userOrRole } :
-      userOrRole ?? {};
-    if (!hasRole(roleUser as AppUser, "customer")) {
+    let rolesArr: string[];
+    if (typeof userOrRole === "string") {
+      rolesArr = [userOrRole];
+    } else if (Array.isArray((userOrRole as any)?.roles)) {
+      rolesArr = (userOrRole as AppUser).roles;
+    } else if (typeof (userOrRole as any)?.roles === "string") {
+      rolesArr = [(userOrRole as any).roles as string];
+    } else {
+      rolesArr = [];
+    }
+    const fakeUser: AppUser = { id: "", phone: "", roles: rolesArr, walletBalance: 0, isActive: true, createdAt: "" };
+    if (!hasRole(fakeUser, "customer")) {
       router.replace("/auth/wrong-app");
       return;
     }

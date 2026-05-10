@@ -135,7 +135,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        from the async Preferences.get() call. */
     const controller = new AbortController();
     (async () => {
-      await tokenStoreReady;
+      try {
+        await tokenStoreReady;
+      } catch (storeErr) {
+        /* Secure token store (Capacitor Preferences) failed to initialise.
+           This is a hard error: we cannot safely read the persisted token, so
+           we clear any stale in-memory state and surface an auth failure rather
+           than silently treating the session as unauthenticated. */
+        console.error("[auth] tokenStoreReady failed — secure storage unavailable:", storeErr);
+        api.clearTokens();
+        setLoading(false);
+        /* Dispatch so any listening component can show a "storage unavailable"
+           banner or toast instead of a blank/stuck login screen. */
+        try {
+          window.dispatchEvent(new CustomEvent("ajkmart:storage-error", {
+            detail: { message: "Secure storage unavailable. Please reinstall the app or clear app data." },
+          }));
+        } catch {}
+        return;
+      }
       if (controller.signal.aborted) return;
       const t = api.getToken();
       if (!t) { setLoading(false); return; }

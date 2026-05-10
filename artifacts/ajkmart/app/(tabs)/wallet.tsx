@@ -1827,7 +1827,7 @@ function WalletScreenInner() {
         </View>
         <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: C.text, textAlign: "center", marginBottom: 8 }}>{T("customerAccountRequired")}</Text>
         <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textSecondary, textAlign: "center", lineHeight: 22 }}>
-          {`You're signed in as a ${user.role} account. The wallet is only available for customer accounts.`}
+          {`You're signed in as a ${(user.roles ?? []).join(", ")} account. The wallet is only available for customer accounts.`}
         </Text>
       </View>
     );

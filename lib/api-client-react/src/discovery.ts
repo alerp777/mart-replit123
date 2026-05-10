@@ -1,33 +1,7 @@
 import { customFetch } from "./custom-fetch";
+import type { Banner, RecommendationProduct, WishlistItem } from "@workspace/api-zod";
 
-export interface Banner {
-  id: string;
-  title: string;
-  subtitle: string | null;
-  imageUrl: string | null;
-  linkType: string;
-  linkValue: string | null;
-  linkUrl: string | null;
-  placement: string;
-  targetService: string | null;
-  gradient1: string | null;
-  gradient2: string | null;
-  icon: string | null;
-  sortOrder: number;
-  isActive: boolean;
-}
-
-export interface RecommendationProduct {
-  id: string;
-  name: string;
-  price: number;
-  image: string | null;
-  category: string | null;
-  rating: number | null;
-  vendorName: string | null;
-  originalPrice: string | null;
-  score?: number;
-}
+export type { Banner, RecommendationProduct, WishlistItem };
 
 export const getBanners = async (
   params?: { placement?: string; service?: string },
@@ -98,8 +72,8 @@ export const getProductVariants = async (
 export interface FlashDealProduct {
   id: string;
   name: string;
-  price: number;
-  originalPrice: number;
+  price: string;
+  originalPrice: string;
   image: string | null;
   category: string | null;
   rating: number | null;
@@ -138,10 +112,10 @@ export interface SearchProductsResponse {
   products: Array<{
     id: string;
     name: string;
-    price: number;
+    price: string;
     image: string | null;
     category: string | null;
-    originalPrice?: number;
+    originalPrice?: string;
     rating: number | null;
     vendorName: string | null;
     type: string | null;
@@ -202,26 +176,6 @@ export const getTrendingSearches = async (
   const res: { searches?: string[] } = await customFetch(`/products/trending-searches${q ? `?${q}` : ""}`, { ...options, method: "GET" });
   return res.searches ?? [];
 };
-
-export interface WishlistItem {
-  id: string;
-  productId: string;
-  createdAt: string;
-  product: {
-    id: string;
-    name: string;
-    price: number;
-    originalPrice?: number;
-    image: string | null;
-    category: string;
-    type: string;
-    rating?: number;
-    reviewCount?: number;
-    inStock: boolean;
-    unit?: string;
-    vendorName?: string;
-  };
-}
 
 export const getWishlist = async (options?: RequestInit): Promise<WishlistItem[]> => {
   const res: { items?: WishlistItem[] } = await customFetch(`/wishlist`, { ...options, method: "GET" });

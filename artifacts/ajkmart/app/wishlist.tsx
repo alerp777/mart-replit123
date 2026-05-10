@@ -144,7 +144,7 @@ export default function WishlistScreen() {
         setAddRoleError(data.error || "Failed to add customer access. Please try again.");
         return;
       }
-      updateUser({ roles: data.data?.roles ?? data.roles ?? undefined });
+      updateUser({ roles: data.data?.roles ?? data.roles ?? [] });
       queryClient.invalidateQueries({ queryKey: ["wishlist"] });
     } catch {
       setAddRoleError("Network error. Please check your connection and try again.");

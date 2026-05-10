@@ -16,9 +16,10 @@ export default function WrongAppScreen() {
   const [addingRole, setAddingRole] = useState(false);
   const [addRoleError, setAddRoleError] = useState<string | null>(null);
 
+  const primaryRole = (user?.roles ?? [])[0];
   const roleLabel =
-    user?.role === "rider" ? "Delivery Rider" :
-    user?.role === "vendor" ? "Store Vendor" :
+    primaryRole === "rider" ? "Delivery Rider" :
+    primaryRole === "vendor" ? "Store Vendor" :
     "non-customer";
 
   const canAddCustomerRole = user && !hasRole(user, "customer");
@@ -46,7 +47,7 @@ export default function WrongAppScreen() {
         setAddRoleError(data.error || "Failed to add customer access. Please try again.");
         return;
       }
-      updateUser({ roles: data.data?.roles ?? data.roles ?? undefined });
+      updateUser({ roles: data.data?.roles ?? data.roles ?? [] });
       router.replace("/(tabs)");
     } catch {
       setAddRoleError("Network error. Please check your connection and try again.");
@@ -68,9 +69,9 @@ export default function WrongAppScreen() {
       </Text>
 
       <Text style={styles.hint}>
-        {user?.role === "rider"
+        {hasRole(user, "rider")
           ? "Please use the AJKMart Rider App to manage your deliveries."
-          : user?.role === "vendor"
+          : hasRole(user, "vendor")
           ? "Please use the AJKMart Vendor App to manage your store."
           : "Please sign in with a customer account to continue."}
       </Text>

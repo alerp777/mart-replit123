@@ -3301,18 +3301,19 @@ components:
           type: string
         email:
           type: string
-        role:
-          type: string
-          enum: [customer, rider, vendor]
+        roles:
+          type: array
+          items:
+            type: string
         avatar:
           type: string
         walletBalance:
-          type: number
+          type: string
         isActive:
           type: boolean
         createdAt:
           type: string
-      required: [id, phone, role, walletBalance, isActive, createdAt]
+      required: [id, phone, roles, walletBalance, isActive, createdAt]
 
     UpdateProfileRequest:
       type: object
@@ -3356,16 +3357,25 @@ components:
         description:
           type: string
         price:
-          type: number
+          type: string
         originalPrice:
-          type: number
+          type: string
         category:
           type: string
         type:
           type: string
-          enum: [mart, food]
+          enum: [mart, food, rides, pharmacy, parcel, van, school]
         image:
           type: string
+        images:
+          type: array
+          items:
+            type: string
+        stock:
+          type: integer
+        approvalStatus:
+          type: string
+          enum: [pending, approved, rejected]
         videoUrl:
           type: string
           nullable: true
@@ -3468,20 +3478,28 @@ components:
           type: string
         userId:
           type: string
+        vendorId:
+          type: string
+        assignedRiderId:
+          type: string
         type:
           type: string
-          enum: [mart, food]
+          enum: [mart, food, rides, pharmacy, parcel, van, school]
         items:
           type: array
           items:
             $ref: "#/components/schemas/CartItem"
         status:
           type: string
-          enum: [pending, confirmed, preparing, out_for_delivery, delivered, cancelled]
+          enum: [pending, confirmed, preparing, ready, picked_up, out_for_delivery, delivered, cancelled]
         total:
-          type: number
+          type: string
         deliveryAddress:
           type: string
+        customerLat:
+          type: number
+        customerLng:
+          type: number
         paymentMethod:
           type: string
           enum: [cash, wallet]
@@ -3833,7 +3851,7 @@ components:
           enum: [car, bike]
         status:
           type: string
-          enum: [searching, confirmed, in_progress, completed, cancelled]
+          enum: [searching, bargaining, accepted, arrived, in_transit, ongoing, completed, cancelled]
         pickupAddress:
           type: string
         dropAddress:

@@ -13,11 +13,15 @@ import type { OrderType } from "./orderType";
 export interface Order {
   id: string;
   userId: string;
+  vendorId?: string;
+  assignedRiderId?: string;
   type: OrderType;
   items: CartItem[];
   status: OrderStatus;
-  total: number;
+  total: string;
   deliveryAddress?: string;
+  customerLat?: number;
+  customerLng?: number;
   paymentMethod: OrderPaymentMethod;
   riderId?: string;
   estimatedTime?: string;

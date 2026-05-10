@@ -12,7 +12,7 @@ export interface VendorOrder {
   userId: string;
   items: CartItem[];
   status: string;
-  total: number;
+  total: string;
   deliveryAddress?: string;
   paymentMethod: string;
   note?: string;

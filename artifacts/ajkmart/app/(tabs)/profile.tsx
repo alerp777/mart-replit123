@@ -532,7 +532,7 @@ function ProfileScreenInner() {
     rider:    { label: "Delivery Rider",  colors: [C.primaryDark, C.primary] },
     vendor:   { label: "Store Vendor",    colors: [C.primaryDark, C.primary] },
   };
-  const role = roleMap[user?.role || "customer"] || roleMap.customer!;
+  const role = roleMap[(user?.roles ?? [])[0] || "customer"] || roleMap.customer!;
   const initials = user?.name
     ? user.name.split(" ").map(w => w?.[0] ?? "").slice(0, 2).join("").toUpperCase()
     : user?.phone?.slice(-2) || "U";
@@ -997,7 +997,7 @@ function ProfileScreenInner() {
           )}
         </SectionCard>
 
-        {user?.role === "vendor" && (
+        {(user?.roles ?? []).includes("vendor") && (
           <SectionCard title="VENDOR DASHBOARD">
             <Row icon="storefront-outline" label="My Products"     sub="Manage products"       onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/vendor/products`)} iconColor={C.mart} iconBg={C.martLight} />
             <Row icon="analytics-outline"  label="Sales Analytics" sub="Revenue & sales"     onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/vendor/analytics`)}           iconColor={C.primary} iconBg={C.primarySoft} />

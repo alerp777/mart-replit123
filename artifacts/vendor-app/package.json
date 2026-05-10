@@ -55,6 +55,7 @@
     "@vitejs/plugin-react": "catalog:",
     "@workspace/admin-timing-shared": "workspace:*",
     "@workspace/api-client-react": "workspace:*",
+    "@workspace/api-zod": "workspace:*",
     "@workspace/auth-utils": "workspace:*",
     "@workspace/i18n": "workspace:*",
     "class-variance-authority": "catalog:",

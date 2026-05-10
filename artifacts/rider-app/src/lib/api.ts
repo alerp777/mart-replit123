@@ -31,52 +31,37 @@ try {
 
 /* ── Preferences-backed async token storage ── */
 async function preferencesSet(key: string, value: string): Promise<void> {
-  try {
-    const { Preferences } = await import("@capacitor/preferences");
-    await Preferences.set({ key, value });
-  } catch (err) {
-    console.warn("[capacitor/preferences] preferencesSet failed — falling back to localStorage:", err);
-    try { localStorage.setItem(key, value); } catch {}
-  }
+  const { Preferences } = await import("@capacitor/preferences");
+  await Preferences.set({ key, value });
 }
 
 async function preferencesGet(key: string): Promise<string> {
-  try {
-    const { Preferences } = await import("@capacitor/preferences");
-    const { value } = await Preferences.get({ key });
-    return value ?? "";
-  } catch (err) {
-    console.warn("[capacitor/preferences] preferencesGet failed — falling back to localStorage:", err);
-    try { return localStorage.getItem(key) ?? ""; } catch { return ""; }
-  }
+  const { Preferences } = await import("@capacitor/preferences");
+  const { value } = await Preferences.get({ key });
+  return value ?? "";
 }
 
 async function preferencesRemove(key: string): Promise<void> {
-  try {
-    const { Preferences } = await import("@capacitor/preferences");
-    await Preferences.remove({ key });
-  } catch (err) {
-    console.warn("[capacitor/preferences] preferencesRemove failed — falling back to localStorage:", err);
-    try { localStorage.removeItem(key); } catch {}
-  }
+  const { Preferences } = await import("@capacitor/preferences");
+  await Preferences.remove({ key });
 }
 
 /* One-time migration: move any token from localStorage → Preferences at boot.
    Exported as a promise so AuthProvider can await it before reading the token —
    avoids treating a valid persisted session as "no token" when the async load
-   hasn't completed yet (critical on app restart). */
+   hasn't completed yet (critical on app restart).
+   Errors propagate to the caller so the AuthProvider can surface a visible
+   auth failure rather than silently treating the session as unauthenticated. */
 export const tokenStoreReady: Promise<void> = (async () => {
-  try {
-    if (typeof localStorage === "undefined") return;
-    const legacy = localStorage.getItem(TOKEN_KEY);
-    if (legacy) {
-      _inMemoryAccessToken = legacy;
-      await preferencesSet(TOKEN_KEY, legacy);
-      localStorage.removeItem(TOKEN_KEY);
-    } else {
-      _inMemoryAccessToken = await preferencesGet(TOKEN_KEY);
-    }
-  } catch { /* swallow — token access is non-fatal on boot */ }
+  if (typeof localStorage === "undefined") return;
+  const legacy = localStorage.getItem(TOKEN_KEY);
+  if (legacy) {
+    _inMemoryAccessToken = legacy;
+    await preferencesSet(TOKEN_KEY, legacy);
+    localStorage.removeItem(TOKEN_KEY);
+  } else {
+    _inMemoryAccessToken = await preferencesGet(TOKEN_KEY);
+  }
 })();
 
 /* Access token helpers — Preferences-backed, with in-memory cache */

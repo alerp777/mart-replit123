@@ -48,3 +48,7 @@ export * from "./generated/types/bookRideRequestType";
 export * from "./generated/types/bookRideRequest";
 export * from "./generated/types/bookRideRequestPaymentMethod";
 export * from "./generated/types/authResponse";
+export * from "./generated/types/banner";
+export * from "./generated/types/recommendationProduct";
+export * from "./generated/types/wishlistItem";
+export * from "./utils";

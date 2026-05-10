@@ -19,8 +19,7 @@ export interface AppUser {
   name?: string;
   email?: string;
   username?: string;
-  role: UserRole;
-  roles?: string;
+  roles: string[];
   avatar?: string;
   walletBalance: number;
   isActive: boolean;
@@ -37,11 +36,10 @@ export interface AppUser {
   hasPassword?: boolean;
 }
 
-/** Returns true if the user has the given role in their comma-separated roles field (or primary role fallback). */
+/** Returns true if the user has the given role in their roles array. */
 export function hasRole(user: AppUser | null, role: string): boolean {
   if (!user) return false;
-  const list = (user.roles || user.role || "").split(",").map(r => r.trim());
-  return list.includes(role);
+  return (user.roles ?? []).includes(role);
 }
 
 interface TwoFactorPending {
@@ -643,7 +641,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data.refreshToken) {
         await secureSet(BIOMETRIC_TOKEN, data.refreshToken);
       }
-      return freshUser.role ?? "customer";
+      return (freshUser.roles ?? [])[0] ?? "customer";
     } catch {
       /* Unexpected error — treat as transient to allow retry */
       return "transient_error";

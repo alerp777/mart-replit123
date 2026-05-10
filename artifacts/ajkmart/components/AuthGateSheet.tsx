@@ -146,7 +146,7 @@ export function useRoleGate() {
     roleBlockProps: {
       visible,
       onClose: () => setVisible(false),
-      userRole: user?.role,
+      userRole: (user?.roles ?? [])[0],
     },
   };
 }

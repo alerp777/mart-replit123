@@ -1213,6 +1213,9 @@ importers:
       '@workspace/api-client-react':
         specifier: workspace:*
         version: link:../../lib/api-client-react
+      '@workspace/api-zod':
+        specifier: workspace:*
+        version: link:../../lib/api-zod
       '@workspace/auth-utils':
         specifier: workspace:*
         version: link:../../lib/auth-utils
@@ -1472,6 +1475,9 @@ importers:
       '@workspace/api-client-react':
         specifier: workspace:*
         version: link:../../lib/api-client-react
+      '@workspace/api-zod':
+        specifier: workspace:*
+        version: link:../../lib/api-zod
       '@workspace/auth-utils':
         specifier: workspace:*
         version: link:../../lib/auth-utils
@@ -1567,6 +1573,9 @@ importers:
       '@tanstack/react-query':
         specifier: 'catalog:'
         version: 5.90.21(react@19.1.0)
+      '@workspace/api-zod':
+        specifier: workspace:*
+        version: link:../api-zod
 
   lib/api-spec:
     devDependencies:
@@ -1576,6 +1585,9 @@ importers:
 
   lib/api-zod:
     dependencies:
+      '@workspace/service-constants':
+        specifier: workspace:*
+        version: link:../service-constants
       zod:
         specifier: 'catalog:'
         version: 3.25.76

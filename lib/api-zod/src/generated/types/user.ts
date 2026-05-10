@@ -5,16 +5,15 @@
  * AJKMart Super App API
  * OpenAPI spec version: 0.1.0
  */
-import type { UserRole } from "./userRole";
 
 export interface User {
   id: string;
   phone: string;
   name?: string;
   email?: string;
-  role: UserRole;
+  roles: string[];
   avatar?: string;
-  walletBalance: number;
+  walletBalance: string;
   isActive: boolean;
   createdAt: string;
 }
