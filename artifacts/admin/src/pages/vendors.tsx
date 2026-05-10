@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AdminFormSheet } from "@/components/AdminFormSheet";
 import { WalletAdjustModal } from "@/components/WalletAdjustModal";
 import { LastUpdated } from "@/components/ui/LastUpdated";
 import { useHasPermission } from "@/hooks/usePermissions";
@@ -808,58 +809,71 @@ export default function Vendors() {
       {verifyModal  && <VendorVerificationDrawer vendor={verifyModal} onClose={() => setVerifyModal(null)} />}
 
 
-      {/* Invite Vendor Dialog (triggered by N shortcut) */}
-      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-        <DialogContent className="sm:max-w-sm rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Store className="w-4 h-4 text-orange-600" /> Invite Vendor
-            </DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleInviteVendor} className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Phone Number</label>
-              <Input
-                ref={invitePhoneRef}
-                type="tel"
-                placeholder="+92 300 1234567"
-                value={invitePhone}
-                onChange={e => setInvitePhone(e.target.value)}
-                className="h-9 rounded-xl"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Email (optional)</label>
-              <Input
-                type="email"
-                placeholder="vendor@example.com"
-                value={inviteEmail}
-                onChange={e => setInviteEmail(e.target.value)}
-                className="h-9 rounded-xl"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Store Name (optional)</label>
-              <Input
-                type="text"
-                placeholder="Store name"
-                value={inviteStore}
-                onChange={e => setInviteStore(e.target.value)}
-                className="h-9 rounded-xl"
-              />
-            </div>
-            <div className="flex gap-2 pt-1">
-              <Button type="button" variant="outline" className="flex-1 h-9 rounded-xl" onClick={() => setInviteOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" className="flex-1 h-9 rounded-xl" disabled={inviteSending}>
-                {inviteSending ? <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
-                {inviteSending ? "Sending…" : "Send Invite"}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Invite Vendor Sheet (triggered by N shortcut) */}
+      <AdminFormSheet
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        title="Invite Vendor"
+        description="Send an invitation to a new vendor via phone or email."
+        busy={inviteSending}
+        width="sm:max-w-sm"
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1 h-9 rounded-xl"
+              onClick={() => setInviteOpen(false)}
+              disabled={inviteSending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="vendor-invite-form"
+              className="flex-1 h-9 rounded-xl"
+              disabled={inviteSending}
+            >
+              {inviteSending ? <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
+              {inviteSending ? "Sending…" : "Send Invite"}
+            </Button>
+          </>
+        }
+      >
+        <form id="vendor-invite-form" onSubmit={handleInviteVendor} className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Phone Number</label>
+            <Input
+              ref={invitePhoneRef}
+              type="tel"
+              placeholder="+92 300 1234567"
+              value={invitePhone}
+              onChange={e => setInvitePhone(e.target.value)}
+              className="h-9 rounded-xl"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Email (optional)</label>
+            <Input
+              type="email"
+              placeholder="vendor@example.com"
+              value={inviteEmail}
+              onChange={e => setInviteEmail(e.target.value)}
+              className="h-9 rounded-xl"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Store Name (optional)</label>
+            <Input
+              type="text"
+              placeholder="Store name"
+              value={inviteStore}
+              onChange={e => setInviteStore(e.target.value)}
+              className="h-9 rounded-xl"
+            />
+          </div>
+        </form>
+      </AdminFormSheet>
     </PullToRefresh>
   );
 }

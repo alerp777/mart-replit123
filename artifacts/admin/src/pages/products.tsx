@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AdminFormSheet } from "@/components/AdminFormSheet";
 import { useLanguage } from "@/lib/useLanguage";
 import { tDual, type TranslationKey } from "@workspace/i18n";
 import { UploadProgress } from "@/components/ui/UploadProgress";
@@ -731,176 +732,191 @@ export default function Products() {
         </div>
       )}
 
-      {/* Add/Edit Dialog */}
-      <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent className="w-[95vw] max-w-2xl max-h-[90dvh] overflow-y-auto rounded-3xl p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle className="font-display text-2xl">{editingId ? T("editProduct") : T("addNewProduct")}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-            {/* Image Uploader */}
-            <div className="space-y-2">
-              <label className="text-sm font-semibold">Product Image</label>
-              <div
-                className="relative border-2 border-dashed border-border rounded-xl overflow-hidden cursor-pointer hover:border-primary/60 transition-colors"
-                style={{ height: imagePreview ? 160 : 100 }}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {imagePreview ? (
-                  <>
-                    <SafeImage src={imagePreview} alt="preview" className="w-full h-full object-cover" />
-                    {imageUploading && (
-                      <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center gap-2">
-                        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span className="text-white text-xs font-semibold">Uploading...</span>
-                      </div>
-                    )}
-                    {!imageUploading && (
-                      <button
-                        type="button"
-                        className="absolute top-2 right-2 w-7 h-7 bg-black/60 hover:bg-black/80 rounded-full flex items-center justify-center text-white transition-colors"
-                        onClick={e => { e.stopPropagation(); setImagePreview(""); setFormData(prev => ({ ...prev, image: "" })); }}
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground">
-                    <ImageIcon className="w-7 h-7" />
-                    <span className="text-xs font-medium">Click to upload image (JPEG/PNG/WebP, max 10MB)</span>
-                  </div>
-                )}
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/jpg,image/png,image/webp"
-                className="hidden"
-                onChange={handleImageSelect}
-              />
-              {imageUploading && (
-                <div className="mt-2">
-                  <UploadProgress
-                    status="uploading"
-                    progress={uploadPercent ?? 0}
-                    fileName="Uploading image"
-                  />
+      {/* Add/Edit Sheet */}
+      <AdminFormSheet
+        open={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        title={editingId ? T("editProduct") : T("addNewProduct")}
+        description={editingId ? "Update product details and save." : "Fill in the details to add a new product."}
+        busy={createMutation.isPending || updateMutation.isPending || imageUploading}
+        width="sm:max-w-2xl"
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 px-5 rounded-xl"
+              onClick={() => setIsFormOpen(false)}
+              disabled={createMutation.isPending || updateMutation.isPending || imageUploading}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="product-form"
+              disabled={createMutation.isPending || updateMutation.isPending || imageUploading}
+              className="h-10 px-6 rounded-xl"
+            >
+              {imageUploading ? "Uploading image..." : (createMutation.isPending || updateMutation.isPending) ? "Saving..." : editingId ? "Save Changes" : "Create Product"}
+            </Button>
+          </>
+        }
+      >
+        <form id="product-form" onSubmit={handleSubmit} className="space-y-4">
+          {/* Image Uploader */}
+          <div className="space-y-2">
+            <label className="text-sm font-semibold">Product Image</label>
+            <div
+              className="relative border-2 border-dashed border-border rounded-xl overflow-hidden cursor-pointer hover:border-primary/60 transition-colors"
+              style={{ height: imagePreview ? 160 : 100 }}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {imagePreview ? (
+                <>
+                  <SafeImage src={imagePreview} alt="preview" className="w-full h-full object-cover" />
+                  {imageUploading && (
+                    <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center gap-2">
+                      <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span className="text-white text-xs font-semibold">Uploading...</span>
+                    </div>
+                  )}
+                  {!imageUploading && (
+                    <button
+                      type="button"
+                      className="absolute top-2 right-2 w-7 h-7 bg-black/60 hover:bg-black/80 rounded-full flex items-center justify-center text-white transition-colors"
+                      onClick={e => { e.stopPropagation(); setImagePreview(""); setFormData(prev => ({ ...prev, image: "" })); }}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground">
+                  <ImageIcon className="w-7 h-7" />
+                  <span className="text-xs font-medium">Click to upload image (JPEG/PNG/WebP, max 10MB)</span>
                 </div>
               )}
             </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp"
+              className="hidden"
+              onChange={handleImageSelect}
+            />
+            {imageUploading && (
+              <div className="mt-2">
+                <UploadProgress
+                  status="uploading"
+                  progress={uploadPercent ?? 0}
+                  fileName="Uploading image"
+                />
+              </div>
+            )}
+          </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold">Name *</label>
-                <Input required maxLength={120} value={formData.name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, name: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. Fresh Milk" />
-              </div>
-              <div className="space-y-2 relative">
-                <label className="text-sm font-semibold">Category *</label>
-                <div className="relative">
-                  <Input
-                    value={categorySearch}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                      setCategorySearch(e.target.value);
-                      setCategoryDropOpen(true);
-                      if (!e.target.value.trim()) {
-                        setFormData(prev => ({ ...prev, category: "" }));
-                      }
-                    }}
-                    onFocus={() => setCategoryDropOpen(true)}
-                    onBlur={() => setTimeout(() => {
-                      setCategoryDropOpen(false);
-                      if (!formData.category) setCategorySearch("");
-                    }, 150)}
-                    className="h-11 rounded-xl pr-8"
-                    placeholder="Search and select a category..."
-                  />
-                  {formData.category && (
-                    <div className="mt-1 text-xs text-muted-foreground px-1">
-                      Selected: <span className="font-semibold text-primary">{formData.category}</span>
-                    </div>
-                  )}
-                  {categoryDropOpen && filteredCategories.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-white border border-border rounded-xl shadow-lg max-h-40 overflow-y-auto">
-                      {filteredCategories.slice(0, 8).map(cat => (
-                        <button
-                          key={cat.id}
-                          type="button"
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted/60 flex items-center gap-2"
-                          onMouseDown={() => {
-                            setCategorySearch(cat.name);
-                            setFormData(prev => ({ ...prev, category: cat.id }));
-                            setCategoryDropOpen(false);
-                          }}
-                        >
-                          {cat.icon && <span>{cat.icon}</span>}
-                          <span className="font-medium">{cat.name}</span>
-                          <span className="text-muted-foreground text-xs ml-auto">{cat.id}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold">Type *</label>
-                <select
-                  className="w-full h-11 rounded-xl border border-input bg-background px-3 text-sm"
-                  value={formData.type} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({...formData, type: e.target.value})}
-                >
-                  <option value="mart">Mart</option>
-                  <option value="food">Food</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold">Unit</label>
-                <Input maxLength={32} value={formData.unit} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, unit: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. 1 kg, 500ml" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold">Price (Rs.) *</label>
-                {/* Cap retail price at 1,000,000 to catch typos before
-                    they reach the order/inventory pipeline. */}
-                <Input type="number" required min="1" max="1000000" step="0.01" value={formData.price} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, price: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. 250" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold">Original Price (Rs.)</label>
-                <Input type="number" min="1" max="1000000" step="0.01" value={formData.originalPrice} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, originalPrice: e.target.value})} className="h-11 rounded-xl" placeholder="optional (for sale)" />
-              </div>
-              <div className="space-y-2 col-span-2">
-                <label className="text-sm font-semibold">Description</label>
-                <Input maxLength={500} value={formData.description} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, description: e.target.value})} className="h-11 rounded-xl" placeholder="Short description..." />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold">Vendor / Restaurant</label>
-                <Input maxLength={120} value={formData.vendorName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, vendorName: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. AJK Fresh Foods" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold">Delivery Time</label>
-                <Input maxLength={48} value={formData.deliveryTime} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, deliveryTime: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. 30-45 min" />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold">Name *</label>
+              <Input required maxLength={120} value={formData.name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, name: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. Fresh Milk" />
+            </div>
+            <div className="space-y-2 relative">
+              <label className="text-sm font-semibold">Category *</label>
+              <div className="relative">
+                <Input
+                  value={categorySearch}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    setCategorySearch(e.target.value);
+                    setCategoryDropOpen(true);
+                    if (!e.target.value.trim()) {
+                      setFormData(prev => ({ ...prev, category: "" }));
+                    }
+                  }}
+                  onFocus={() => setCategoryDropOpen(true)}
+                  onBlur={() => setTimeout(() => {
+                    setCategoryDropOpen(false);
+                    if (!formData.category) setCategorySearch("");
+                  }, 150)}
+                  className="h-11 rounded-xl pr-8"
+                  placeholder="Search and select a category..."
+                />
+                {formData.category && (
+                  <div className="mt-1 text-xs text-muted-foreground px-1">
+                    Selected: <span className="font-semibold text-primary">{formData.category}</span>
+                  </div>
+                )}
+                {categoryDropOpen && filteredCategories.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-border rounded-xl shadow-lg max-h-40 overflow-y-auto">
+                    {filteredCategories.slice(0, 8).map(cat => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-muted/60 flex items-center gap-2"
+                        onMouseDown={() => {
+                          setCategorySearch(cat.name);
+                          setFormData(prev => ({ ...prev, category: cat.id }));
+                          setCategoryDropOpen(false);
+                        }}
+                      >
+                        {cat.icon && <span>{cat.icon}</span>}
+                        <span className="font-medium">{cat.name}</span>
+                        <span className="text-muted-foreground text-xs ml-auto">{cat.id}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
-            <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-xl border border-border/50">
-              <input
-                type="checkbox" id="instock"
-                checked={formData.inStock}
-                onChange={e => setFormData({...formData, inStock: e.target.checked})}
-                className="w-5 h-5 rounded accent-primary"
-              />
-              <label htmlFor="instock" className="font-semibold text-sm cursor-pointer">
-                Product is currently in stock
-              </label>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold">Type *</label>
+              <select
+                className="w-full h-11 rounded-xl border border-input bg-background px-3 text-sm"
+                value={formData.type} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({...formData, type: e.target.value})}
+              >
+                <option value="mart">Mart</option>
+                <option value="food">Food</option>
+              </select>
             </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <Button type="button" variant="outline" className="h-11 px-6 rounded-xl" onClick={() => setIsFormOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending || imageUploading} className="h-11 px-8 rounded-xl">
-                {imageUploading ? "Uploading image..." : (createMutation.isPending || updateMutation.isPending) ? "Saving..." : editingId ? 'Save Changes' : 'Create Product'}
-              </Button>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold">Unit</label>
+              <Input maxLength={32} value={formData.unit} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, unit: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. 1 kg, 500ml" />
             </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold">Price (Rs.) *</label>
+              {/* Cap retail price at 1,000,000 to catch typos before
+                  they reach the order/inventory pipeline. */}
+              <Input type="number" required min="1" max="1000000" step="0.01" value={formData.price} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, price: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. 250" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold">Original Price (Rs.)</label>
+              <Input type="number" min="1" max="1000000" step="0.01" value={formData.originalPrice} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, originalPrice: e.target.value})} className="h-11 rounded-xl" placeholder="optional (for sale)" />
+            </div>
+            <div className="space-y-2 col-span-2">
+              <label className="text-sm font-semibold">Description</label>
+              <Input maxLength={500} value={formData.description} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, description: e.target.value})} className="h-11 rounded-xl" placeholder="Short description..." />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold">Vendor / Restaurant</label>
+              <Input maxLength={120} value={formData.vendorName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, vendorName: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. AJK Fresh Foods" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold">Delivery Time</label>
+              <Input maxLength={48} value={formData.deliveryTime} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, deliveryTime: e.target.value})} className="h-11 rounded-xl" placeholder="e.g. 30-45 min" />
+            </div>
+          </div>
+          <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-xl border border-border/50">
+            <input
+              type="checkbox" id="instock"
+              checked={formData.inStock}
+              onChange={e => setFormData({...formData, inStock: e.target.checked})}
+              className="w-5 h-5 rounded accent-primary"
+            />
+            <label htmlFor="instock" className="font-semibold text-sm cursor-pointer">
+              Product is currently in stock
+            </label>
+          </div>
+        </form>
+      </AdminFormSheet>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>

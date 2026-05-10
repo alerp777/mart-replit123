@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AdminFormSheet } from "@/components/AdminFormSheet";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { LastUpdated } from "@/components/ui/LastUpdated";
 
@@ -107,88 +108,96 @@ function RiderDetailDrawer({ rider, onClose }: { rider: any; onClose: () => void
     });
   };
 
+  const isBusy = restrictMut.isPending || unrestrictMut.isPending;
+
   return (
-    <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
-      <DialogContent className="w-[95vw] max-w-lg rounded-2xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Eye className="w-5 h-5 text-blue-600" /> Rider Details — {rider.name || rider.phone}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 mt-2">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
-              <p className="text-[10px] text-red-500 font-bold uppercase">Cancels</p>
-              <p className="text-xl font-extrabold text-red-700">{rider.cancelCount ?? 0}</p>
-            </div>
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
-              <p className="text-[10px] text-amber-500 font-bold uppercase">Ignores</p>
-              <p className="text-xl font-extrabold text-amber-700">{rider.ignoreCount ?? 0}</p>
-            </div>
-            <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-center">
-              <p className="text-[10px] text-purple-500 font-bold uppercase">Penalties</p>
-              <p className="text-xl font-extrabold text-purple-700">{formatCurrency(rider.penaltyTotal ?? 0)}</p>
-            </div>
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
-              <p className="text-[10px] text-blue-500 font-bold uppercase">Rating</p>
-              <p className="text-xl font-extrabold text-blue-700">{rider.avgRating ?? 0} <span className="text-xs font-normal">({rider.ratingCount ?? 0})</span></p>
-            </div>
+    <AdminFormSheet
+      open
+      onClose={onClose}
+      title={`Rider Details — ${rider.name || rider.phone}`}
+      description="Performance summary, penalties, and ratings."
+      busy={isBusy}
+      width="sm:max-w-lg"
+      footer={
+        rider.isRestricted ? (
+          <Button
+            onClick={handleUnrestrict}
+            disabled={isBusy}
+            className="flex-1 rounded-xl bg-green-600 hover:bg-green-700 text-white gap-2"
+          >
+            <ShieldCheck className="w-4 h-4" /> Unrestrict Rider
+          </Button>
+        ) : (
+          <Button
+            onClick={handleRestrict}
+            disabled={isBusy}
+            variant="outline"
+            className="flex-1 rounded-xl border-red-300 text-red-700 hover:bg-red-50 gap-2"
+          >
+            <ShieldAlert className="w-4 h-4" /> Restrict Rider
+          </Button>
+        )
+      }
+    >
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
+            <p className="text-[10px] text-red-500 font-bold uppercase">Cancels</p>
+            <p className="text-xl font-extrabold text-red-700">{rider.cancelCount ?? 0}</p>
           </div>
-
-          <div className="flex gap-2">
-            {rider.isRestricted ? (
-              <Button onClick={handleUnrestrict} disabled={unrestrictMut.isPending}
-                className="flex-1 rounded-xl bg-green-600 hover:bg-green-700 text-white gap-2">
-                <ShieldCheck className="w-4 h-4" /> Unrestrict Rider
-              </Button>
-            ) : (
-              <Button onClick={handleRestrict} disabled={restrictMut.isPending}
-                variant="outline" className="flex-1 rounded-xl border-red-300 text-red-700 hover:bg-red-50 gap-2">
-                <ShieldAlert className="w-4 h-4" /> Restrict Rider
-              </Button>
-            )}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+            <p className="text-[10px] text-amber-500 font-bold uppercase">Ignores</p>
+            <p className="text-xl font-extrabold text-amber-700">{rider.ignoreCount ?? 0}</p>
           </div>
-
-          {penalties.length > 0 && (
-            <div>
-              <p className="text-sm font-bold text-foreground mb-2">Penalty History</p>
-              <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                {penalties.map((p: any) => (
-                  <div key={p.id} className="flex items-center justify-between bg-muted/30 rounded-lg px-3 py-2 text-xs">
-                    <div className="flex items-center gap-2">
-                      {p.type === "cancel" ? <XCircle className="w-3.5 h-3.5 text-red-500"/> : <SkipForward className="w-3.5 h-3.5 text-amber-500"/>}
-                      <span className="text-muted-foreground">{p.reason || p.type}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {p.amount > 0 && <span className="font-bold text-red-600">-{formatCurrency(p.amount)}</span>}
-                      <span className="text-muted-foreground">{formatDate(p.createdAt)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {ratings.length > 0 && (
-            <div>
-              <p className="text-sm font-bold text-foreground mb-2">Recent Ratings</p>
-              <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                {ratings.map((rt: any) => (
-                  <div key={rt.id} className="flex items-center justify-between bg-muted/30 rounded-lg px-3 py-2 text-xs">
-                    <div className="flex items-center gap-2">
-                      <Star className="w-3.5 h-3.5 text-amber-500"/>
-                      <span className="font-bold">{rt.stars}/5</span>
-                      {rt.comment && <span className="text-muted-foreground truncate max-w-[180px]">"{rt.comment}"</span>}
-                    </div>
-                    <span className="text-muted-foreground">{formatDate(rt.createdAt)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-center">
+            <p className="text-[10px] text-purple-500 font-bold uppercase">Penalties</p>
+            <p className="text-xl font-extrabold text-purple-700">{formatCurrency(rider.penaltyTotal ?? 0)}</p>
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+            <p className="text-[10px] text-blue-500 font-bold uppercase">Rating</p>
+            <p className="text-xl font-extrabold text-blue-700">{rider.avgRating ?? 0} <span className="text-xs font-normal">({rider.ratingCount ?? 0})</span></p>
+          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+
+        {penalties.length > 0 && (
+          <div>
+            <p className="text-sm font-bold text-foreground mb-2">Penalty History</p>
+            <div className="space-y-1.5">
+              {penalties.map((p: any) => (
+                <div key={p.id} className="flex items-center justify-between bg-muted/30 rounded-lg px-3 py-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    {p.type === "cancel" ? <XCircle className="w-3.5 h-3.5 text-red-500"/> : <SkipForward className="w-3.5 h-3.5 text-amber-500"/>}
+                    <span className="text-muted-foreground">{p.reason || p.type}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {p.amount > 0 && <span className="font-bold text-red-600">-{formatCurrency(p.amount)}</span>}
+                    <span className="text-muted-foreground">{formatDate(p.createdAt)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {ratings.length > 0 && (
+          <div>
+            <p className="text-sm font-bold text-foreground mb-2">Recent Ratings</p>
+            <div className="space-y-1.5">
+              {ratings.map((rt: any) => (
+                <div key={rt.id} className="flex items-center justify-between bg-muted/30 rounded-lg px-3 py-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <Star className="w-3.5 h-3.5 text-amber-500"/>
+                    <span className="font-bold">{rt.stars}/5</span>
+                    {rt.comment && <span className="text-muted-foreground truncate max-w-[180px]">"{rt.comment}"</span>}
+                  </div>
+                  <span className="text-muted-foreground">{formatDate(rt.createdAt)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </AdminFormSheet>
   );
 }
 
