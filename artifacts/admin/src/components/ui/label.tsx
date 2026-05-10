@@ -1,1 +1,1 @@
-export * from "@workspace/ui/components/ui/label";
+export { Label } from "@workspace/ui/components/ui/label";

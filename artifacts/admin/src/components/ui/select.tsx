@@ -1,1 +1,12 @@
-export * from "@workspace/ui/components/ui/select";
+export {
+  Select,
+  SelectGroup,
+  SelectValue,
+  SelectTrigger,
+  SelectContent,
+  SelectLabel,
+  SelectItem,
+  SelectSeparator,
+  SelectScrollUpButton,
+  SelectScrollDownButton,
+} from "@workspace/ui/components/ui/select";

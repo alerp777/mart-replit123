@@ -1,1 +1,1 @@
-export * from "@workspace/ui/components/ui/progress";
+export { Progress } from "@workspace/ui/components/ui/progress";

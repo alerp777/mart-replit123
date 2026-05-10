@@ -1,1 +1,1 @@
-export * from "@workspace/ui/components/ui/aspect-ratio";
+export { AspectRatio } from "@workspace/ui/components/ui/aspect-ratio";

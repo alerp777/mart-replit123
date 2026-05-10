@@ -1,1 +1,1 @@
-export * from "@workspace/ui/components/ui/switch";
+export { Switch } from "@workspace/ui/components/ui/switch";

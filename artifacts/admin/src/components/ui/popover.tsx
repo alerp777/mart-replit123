@@ -1,1 +1,1 @@
-export * from "@workspace/ui/components/ui/popover";
+export { Popover, PopoverTrigger, PopoverContent, PopoverAnchor } from "@workspace/ui/components/ui/popover";

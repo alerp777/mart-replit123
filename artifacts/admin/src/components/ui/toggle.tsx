@@ -1,1 +1,1 @@
-export * from "@workspace/ui/components/ui/toggle";
+export { Toggle, toggleVariants } from "@workspace/ui/components/ui/toggle";

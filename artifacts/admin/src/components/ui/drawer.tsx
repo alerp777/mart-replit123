@@ -1,1 +1,12 @@
-export * from "@workspace/ui/components/ui/drawer";
+export {
+  Drawer,
+  DrawerPortal,
+  DrawerOverlay,
+  DrawerTrigger,
+  DrawerClose,
+  DrawerContent,
+  DrawerHeader,
+  DrawerFooter,
+  DrawerTitle,
+  DrawerDescription,
+} from "@workspace/ui/components/ui/drawer";

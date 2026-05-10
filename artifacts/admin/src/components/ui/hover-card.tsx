@@ -1,1 +1,1 @@
-export * from "@workspace/ui/components/ui/hover-card";
+export { HoverCard, HoverCardTrigger, HoverCardContent } from "@workspace/ui/components/ui/hover-card";

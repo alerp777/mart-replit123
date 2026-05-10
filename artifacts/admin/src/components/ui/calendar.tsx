@@ -1,1 +1,1 @@
-export * from "@workspace/ui/components/ui/calendar";
+export { Calendar, CalendarDayButton } from "@workspace/ui/components/ui/calendar";

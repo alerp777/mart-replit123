@@ -1,1 +1,1 @@
-export * from "@workspace/ui/components/ui/textarea";
+export { Textarea } from "@workspace/ui/components/ui/textarea";

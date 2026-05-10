@@ -1,1 +1,1 @@
-export * from "@workspace/ui/components/ui/toggle-group";
+export { ToggleGroup, ToggleGroupItem } from "@workspace/ui/components/ui/toggle-group";

@@ -1,1 +1,9 @@
-export * from "@workspace/ui/components/ui/pagination";
+export {
+  Pagination,
+  PaginationContent,
+  PaginationLink,
+  PaginationItem,
+  PaginationPrevious,
+  PaginationNext,
+  PaginationEllipsis,
+} from "@workspace/ui/components/ui/pagination";
