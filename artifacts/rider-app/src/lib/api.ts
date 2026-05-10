@@ -1,4 +1,5 @@
 import { getRiderApiBase } from "./envValidation";
+import { createApiFetcher, RefreshError } from "@workspace/api-client-react";
 
 const BASE = getRiderApiBase();
 
@@ -80,17 +81,12 @@ function sessionRemove(): void {
 /* Refresh token helpers — IN-MEMORY ONLY.
    The raw value is also delivered as an HttpOnly cookie by the server for
    subsequent /auth/refresh and /auth/logout calls. The in-memory copy backs
-   the legacy POST-body fallback during the cookie-rollout window.
-   TODO(remove-after-v1): once the cookie-bearing rider build has fully
-   propagated, remove _inMemoryRefreshToken and the body fallback in
-   refreshAccessToken/logout. */
+   the legacy POST-body fallback during the cookie-rollout window. */
 function localGet(): string {
   return _inMemoryRefreshToken;
 }
 function localSet(value: string): void {
   _inMemoryRefreshToken = value;
-  /* Also belt-and-braces clear any stale localStorage entry that may have
-     been written by an older bundle still cached in this browser. */
   try { localStorage.removeItem(REFRESH_KEY); } catch {}
 }
 function localRemove(): void {
@@ -98,7 +94,7 @@ function localRemove(): void {
   try { localStorage.removeItem(REFRESH_KEY); } catch {}
 }
 
-/* Read the access token from localStorage (current scheme) or scan for legacy keys. */
+/* Read the access token from Preferences-backed in-memory cache. */
 function getToken(): string {
   return sessionGet();
 }
@@ -107,10 +103,7 @@ function getRefreshToken(): string {
   return localGet();
 }
 
-/* Sweep localStorage for any stale rider auth keys from older app versions.
-   Removes every key that looks like a rider access token (matches "rider_" or
-   "ajkmart_rider" prefix) but is NOT the current access-token key or refresh-token key,
-   which are intentionally kept in localStorage for mid-trip rehydration. */
+/* Sweep localStorage for any stale rider auth keys from older app versions. */
 function sweepLegacyTokens(): void {
   try {
     const keysToRemove: string[] = [];
@@ -129,7 +122,6 @@ function sweepLegacyTokens(): void {
 function clearTokens(): void {
   sessionRemove();
   localRemove();
-  /* Erase all known legacy keys AND any additional pattern-matching keys */
   sweepLegacyTokens();
   _inMemoryAccessToken  = "";
   _inMemoryRefreshToken = "";
@@ -169,16 +161,6 @@ function triggerLogout(reason: string) {
   } catch {}
 }
 
-let _refreshPromise: Promise<RefreshResult> | null = null;
-
-async function attemptTokenRefresh(): Promise<RefreshResult> {
-  if (_refreshPromise) return _refreshPromise;
-  _refreshPromise = _doRefresh();
-  try { return await _refreshPromise; } finally { _refreshPromise = null; }
-}
-
-type RefreshResult = "refreshed" | "auth_failed" | "transient";
-
 export interface ApiError extends Error {
   status?: number;
   responseData?: { existingAccount?: boolean; [key: string]: unknown };
@@ -188,44 +170,38 @@ export function isApiError(e: unknown): e is ApiError {
   return e instanceof Error && ("status" in e || "responseData" in e);
 }
 
-async function _doRefresh(): Promise<RefreshResult> {
-  /* The refresh credential travels in an HttpOnly cookie set by the server.
-     We still pass any in-memory shadow copy in the body as a one-release
-     legacy fallback for older API servers that have not been redeployed. If
-     neither path can prove identity we mark this as auth_failed so the
-     caller routes to login — but only when there is genuinely no cookie OR
-     in-memory token to send. We cannot read the cookie from JS, so we
-     optimistically attempt the request and let the server respond. */
-  const refreshToken = getRefreshToken();
-  try {
-    const res = await fetch(`${BASE}/auth/refresh`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(refreshToken ? { refreshToken } : {}),
-    });
-    if (!res.ok) {
-      /* 5xx / network-level: transient, keep tokens, let apiFetch retry */
-      if (res.status >= 500) return "transient";
-      /* 401 / 403: refresh token is invalid — must re-authenticate */
-      clearTokens();
-      return "auth_failed";
-    }
-    const data = await res.json();
-    if (data.token) {
-      sessionSet(data.token);
-      sweepLegacyTokens();
-      _tokenRefreshCallbacks.forEach(fn => { try { fn(); } catch {} });
+/* ── Configurable network settings ────────────────────────────────────────────
+   These are updated at startup by the platform config. Defaults match the
+   hardcoded values that were previously used so existing behaviour is preserved
+   when the platform config cannot be fetched. */
+let _apiTimeoutMs = 30_000;
 
-    }
-    if (data.refreshToken) localSet(data.refreshToken);
-    return "refreshed";
-  } catch {
-    /* Network errors (offline, timeout) are transient */
-    return "transient";
-  }
+export function setApiTimeoutMs(ms: number): void {
+  if (Number.isFinite(ms) && ms > 0) _apiTimeoutMs = Math.min(ms, 300_000);
 }
 
+/* ── Shared API fetcher (createApiFetcher factory) ────────────────────────────
+   Centralises: Bearer injection, timeout, 401→refresh (mutex)→retry.
+   setToken fires _tokenRefreshCallbacks (socket reconnect) and sweeps stale
+   localStorage keys. _riderRefresh exposes the mutex-guarded refresh for
+   api.refreshToken. */
+const [_riderFetcher, _riderRefresh] = createApiFetcher({
+  baseUrl: BASE,
+  getToken: () => sessionGet() || null,
+  setToken: (token) => {
+    sessionSet(token);
+    sweepLegacyTokens();
+    _tokenRefreshCallbacks.forEach(fn => { try { fn(); } catch {} });
+  },
+  getRefreshToken: localGet,
+  setRefreshToken: localSet,
+  onRefreshFailed: (isTransient) => {
+    if (!isTransient) triggerLogout("session_expired");
+  },
+  refreshEndpoint: `${BASE}/auth/refresh`,
+  timeoutMs: () => _apiTimeoutMs,
+  credentialsMode: "include",
+});
 
 interface ApiEnvelope<T = unknown> {
   success: boolean;
@@ -241,34 +217,15 @@ interface ApiEnvelope<T = unknown> {
    here as `Order` / `Ride` so existing consumers (Home.tsx etc.) need no changes. */
 export type { RiderOrder as Order, RiderRide as Ride, RiderRequestsResponse } from "@workspace/api-zod";
 
-/* ── Configurable network settings ────────────────────────────────────────────
-   These are updated at startup by the platform config. Defaults match the
-   hardcoded values that were previously used so existing behaviour is preserved
-   when the platform config cannot be fetched. */
-let _apiTimeoutMs = 30_000;
-
-export function setApiTimeoutMs(ms: number): void {
-  if (Number.isFinite(ms) && ms > 0) _apiTimeoutMs = Math.min(ms, 300_000);
-}
-
-export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudget = 2, _returnEnvelope = false, _5xxRetries = 3): Promise<any> {
-  const token = getToken();
+export async function apiFetch(path: string, opts: RequestInit = {}, _returnEnvelope = false, _5xxRetries = 3): Promise<any> {
   const isFormData = opts.body instanceof FormData;
-  const headers: Record<string, string> = {
-    ...(isFormData ? {} : { "Content-Type": "application/json" }),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(opts.headers as Record<string, string> || {}),
+  const mergedOpts: RequestInit = {
+    ...opts,
+    headers: {
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
+      ...(opts.headers as Record<string, string> || {}),
+    },
   };
-
-  /* Build a combined signal: always include a configurable timeout, plus any caller-provided signal */
-  const timeoutController = new AbortController();
-  const timeoutId = setTimeout(() => timeoutController.abort(), _apiTimeoutMs);
-  const externalSignal = opts.signal as AbortSignal | undefined;
-  const signal: AbortSignal = externalSignal
-    ? (typeof AbortSignal.any === "function"
-        ? AbortSignal.any([timeoutController.signal, externalSignal])
-        : externalSignal)
-    : timeoutController.signal;
 
   let res: Response;
   try {
@@ -276,9 +233,29 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudge
        server is sent on every API call. Cookies are scoped server-side to
        /api/auth so non-auth endpoints will not see them; this is purely
        enabling the cookie-aware paths. */
-    res = await fetch(`${BASE}${path}`, { ...opts, headers, signal, credentials: "include" });
-  } finally {
-    clearTimeout(timeoutId);
+    res = await _riderFetcher(path, mergedOpts);
+  } catch (err: unknown) {
+    if (err instanceof RefreshError) {
+      if (err.isTransient) {
+        /* Transient refresh failure (network/5xx) — keep tokens, surface recoverable error */
+        throw Object.assign(
+          new Error("Connection issue. Please check your network and try again."),
+          { status: 0, transient: true }
+        );
+      }
+      /* auth_failed — triggerLogout already called via onRefreshFailed */
+      throw Object.assign(
+        new Error("Session expired. Please log in again."),
+        { status: 401 }
+      );
+    }
+    /* Re-throw AbortError unchanged so callers can detect request cancellation */
+    if (err instanceof Error && err.name === "AbortError") throw err;
+    /* Network-level failure (offline, timeout) — never log out for this */
+    throw Object.assign(
+      new Error("Network error. Please check your connection and try again."),
+      { status: 0, transient: true }
+    );
   }
 
   /* ── 5xx exponential-backoff retry (3 attempts: 1 s / 2 s / 4 s) ────────
@@ -291,27 +268,7 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudge
     const delayMs  = 1000 * Math.pow(2, attempt - 1);  // 1 s, 2 s, 4 s
     console.debug(`[api] 5xx retry ${attempt}/3 for ${path} (status ${res.status}) — waiting ${delayMs}ms`);
     await new Promise(r => setTimeout(r, delayMs));
-    return apiFetch(path, opts, _retryBudget, _returnEnvelope, _5xxRetries - 1);
-  }
-
-  if (res.status === 401 && _retryBudget > 0) {
-    const refreshResult = await attemptTokenRefresh();
-    if (refreshResult === "refreshed") {
-      return apiFetch(path, opts, _retryBudget - 1, _returnEnvelope);
-    }
-    if (refreshResult === "transient" && _retryBudget > 1) {
-      /* Transient server error during refresh — wait briefly and retry once more */
-      await new Promise((r) => setTimeout(r, 800));
-      return apiFetch(path, opts, _retryBudget - 1, _returnEnvelope);
-    }
-    if (refreshResult === "transient") {
-      /* Budget exhausted but refresh was transient (network/5xx) — keep tokens, surface recoverable error */
-      throw Object.assign(new Error("Connection issue. Please check your network and try again."), { status: 0, transient: true });
-    }
-    /* auth_failed — refresh token confirmed invalid — session is definitely invalid */
-    triggerLogout("session_expired");
-    const err = await res.json().catch(() => ({ error: "Session expired" }));
-    throw Object.assign(new Error(err.error || "Session expired. Please log in again."), { status: 401 });
+    return apiFetch(path, opts, _returnEnvelope, _5xxRetries - 1);
   }
 
   if (!res.ok) {
@@ -349,6 +306,7 @@ export async function apiFetch(path: string, opts: RequestInit = {}, _retryBudge
     } catch {}
     throw error;
   }
+
   let json: ApiEnvelope;
   try {
     json = await res.json() as ApiEnvelope;
@@ -373,7 +331,7 @@ export const api = {
   loginUsername:(identifier: string, password: string, captchaToken?: string, deviceFingerprint?: string) => apiFetch("/auth/login", { method: "POST", body: JSON.stringify({ identifier, password, role: "rider", captchaToken, deviceFingerprint }) }),
   checkAvailable:(data: { phone?: string; email?: string; username?: string }, signal?: AbortSignal) => apiFetch("/auth/check-available", { method: "POST", body: JSON.stringify(data), ...(signal ? { signal } : {}) }),
   logout:       (refreshToken?: string) => apiFetch("/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) }).finally(clearTokens),
-  refreshToken: () => attemptTokenRefresh(),
+  refreshToken: () => _riderRefresh(),
 
   registerRider: (data: {
     name: string; phone: string; email: string; cnic: string; vehicleType: string;
@@ -431,7 +389,7 @@ export const api = {
 
   /* Token helpers */
   storeTokens: (token: string, refreshToken?: string) => {
-    /* Store access token in sessionStorage; refresh token in localStorage */
+    /* Store access token in Preferences; refresh token in-memory only */
     sessionSet(token);
     if (refreshToken) localSet(refreshToken);
     /* Sweep all stale legacy rider access keys from localStorage */
@@ -447,7 +405,7 @@ export const api = {
   setOnline:    (isOnline: boolean) => apiFetch("/rider/online", { method: "PATCH", body: JSON.stringify({ isOnline }) }),
   updateProfile:(data: any) => apiFetch("/rider/profile", { method: "PATCH", body: JSON.stringify(data) }),
   getRequests:  (): Promise<RiderRequestsResponse> =>
-    apiFetch("/rider/requests", {}, 2, true).then((env: ApiEnvelope<{ orders: Order[]; rides: Ride[] }> & { serverTime?: string }) => {
+    apiFetch("/rider/requests", {}, true).then((env: ApiEnvelope<{ orders: Order[]; rides: Ride[] }> & { serverTime?: string }) => {
       const payload = env.data ?? { orders: [], rides: [] };
       return {
         orders: payload.orders ?? [],

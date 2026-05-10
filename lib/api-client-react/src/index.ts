@@ -1,6 +1,16 @@
 export * from "./generated/api";
 export * from "./generated/api.schemas";
 export {
+  createApiFetcher,
+  RefreshError,
+} from "./createApiFetcher";
+export type {
+  CreateApiFetcherConfig,
+  CoreFetch,
+  CoreFetchOpts,
+  RefreshResult,
+} from "./createApiFetcher";
+export {
   customFetch,
   setBaseUrl,
   setAuthTokenGetter,

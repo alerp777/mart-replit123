@@ -1,4 +1,5 @@
 import { getVendorApiBase } from "./envValidation";
+import { createApiFetcher, RefreshError } from "@workspace/api-client-react";
 
 const BASE = getVendorApiBase();
 
@@ -77,45 +78,6 @@ function triggerLogout(reason: string) {
   try { window.dispatchEvent(new CustomEvent("ajkmart:logout", { detail: { reason } })); } catch {}
 }
 
-type RefreshResult = "refreshed" | "auth_failed" | "transient";
-
-let _refreshPromise: Promise<RefreshResult> | null = null;
-
-async function attemptTokenRefresh(): Promise<RefreshResult> {
-  if (_refreshPromise) return _refreshPromise;
-  _refreshPromise = _doRefresh();
-  try { return await _refreshPromise; } finally { _refreshPromise = null; }
-}
-
-async function _doRefresh(): Promise<RefreshResult> {
-  const refreshToken = localGet();
-  try {
-    const res = await fetch(`${BASE}/auth/refresh`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json", "X-App": "vendor" },
-      /* Include in-memory refresh token as POST-body fallback while the
-         HttpOnly cookie rolls out; server accepts whichever arrives first. */
-      body: JSON.stringify(refreshToken ? { refreshToken } : {}),
-    });
-    if (!res.ok) {
-      /* 5xx / network-level: transient — keep tokens, retry */
-      if (res.status >= 500) return "transient";
-      /* 401/403: refresh token is invalid — must re-authenticate */
-      clearTokens();
-      return "auth_failed";
-    }
-    const data = await res.json();
-    if (data.token) _inMemoryAccessToken = data.token;
-    /* New refresh token: in-memory only (HttpOnly cookie also set by server) */
-    if (data.refreshToken) localSet(data.refreshToken);
-    return "refreshed";
-  } catch {
-    /* Network errors (offline, timeout) are transient */
-    return "transient";
-  }
-}
-
 /* ── Configurable network settings ────────────────────────────────────────────
    Updated at startup from the platform config. Defaults match the previously
    hardcoded value (30 s) so existing behaviour is preserved. */
@@ -125,38 +87,57 @@ export function setApiTimeoutMs(ms: number): void {
   if (Number.isFinite(ms) && ms > 0) _apiTimeoutMs = Math.min(ms, 300_000);
 }
 
-export async function apiFetch(path: string, opts: RequestInit & { _timeoutMs?: number } = {}, _retryBudget = 2, _5xxRetries = 3): Promise<any> {
-  const token = getToken();
-  const isFormData = opts.body instanceof FormData;
-  const headers: Record<string, string> = {
-    ...(isFormData ? {} : { "Content-Type": "application/json" }),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(opts.headers as Record<string, string> || {}),
-  };
+/* ── Shared API fetcher (createApiFetcher factory) ────────────────────────────
+   Centralises: Bearer injection, timeout, 401→refresh (mutex)→retry.
+   Callbacks close over module-level vars so they always reflect current state.
+   _vendorRefresh exposes the mutex-guarded refresh for api.refreshToken. */
+const [_vendorFetcher, _vendorRefresh] = createApiFetcher({
+  baseUrl: BASE,
+  getToken: () => _inMemoryAccessToken || null,
+  setToken: (token) => { _inMemoryAccessToken = token; },
+  getRefreshToken: localGet,
+  setRefreshToken: localSet,
+  onRefreshFailed: (isTransient) => {
+    if (!isTransient) triggerLogout("session_expired");
+  },
+  refreshEndpoint: `${BASE}/auth/refresh`,
+  extraRefreshHeaders: () => ({ "X-App": "vendor" }),
+  timeoutMs: () => _apiTimeoutMs,
+  credentialsMode: "include",
+});
 
-  /* Build a combined signal: include a timeout (default from config, overridable via _timeoutMs),
-     plus any caller-provided signal. Pass _timeoutMs: 0 to disable the timeout entirely. */
-  const timeoutMs = opts._timeoutMs !== undefined ? opts._timeoutMs : _apiTimeoutMs;
-  const timeoutController = new AbortController();
-  const timeoutId = timeoutMs > 0 ? setTimeout(() => timeoutController.abort(), timeoutMs) : null;
-  const externalSignal = opts.signal as AbortSignal | undefined;
-  const signal: AbortSignal = externalSignal
-    ? (typeof AbortSignal.any === "function"
-        ? AbortSignal.any([timeoutController.signal, externalSignal])
-        : externalSignal)
-    : timeoutController.signal;
+export async function apiFetch(path: string, opts: RequestInit & { _timeoutMs?: number } = {}, _5xxRetries = 3): Promise<any> {
+  const isFormData = opts.body instanceof FormData;
+  const mergedOpts: RequestInit & { _timeoutMs?: number } = {
+    ...opts,
+    headers: {
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
+      ...(opts.headers as Record<string, string> || {}),
+    },
+  };
 
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, { ...opts, headers, signal, credentials: "include" });
-  } catch (networkErr: unknown) {
-    if (timeoutId !== null) clearTimeout(timeoutId);
-    /* Rethrow AbortError unchanged so callers can detect request cancellation */
-    if (networkErr instanceof Error && networkErr.name === "AbortError") throw networkErr;
+    res = await _vendorFetcher(path, mergedOpts);
+  } catch (err: unknown) {
+    if (err instanceof RefreshError) {
+      if (err.isTransient) {
+        /* Transient refresh failure (network/5xx) — keep tokens, surface recoverable error */
+        throw Object.assign(
+          new Error("Connection issue. Please check your network and try again."),
+          { status: 0, transient: true }
+        );
+      }
+      /* auth_failed — triggerLogout already called via onRefreshFailed */
+      throw Object.assign(
+        new Error("Session expired. Please log in again."),
+        { status: 401 }
+      );
+    }
+    /* Re-throw AbortError unchanged so callers can detect request cancellation */
+    if (err instanceof Error && err.name === "AbortError") throw err;
     /* Network-level failure (offline, timeout) — never log out for this */
     throw Object.assign(new Error("Network error. Please check your connection and try again."), { status: 0, transient: true });
-  } finally {
-    if (timeoutId !== null) clearTimeout(timeoutId);
   }
 
   /* ── 5xx exponential-backoff retry (3 attempts: 1 s / 2 s / 4 s) ────────
@@ -169,26 +150,7 @@ export async function apiFetch(path: string, opts: RequestInit & { _timeoutMs?: 
     const delayMs  = 1000 * Math.pow(2, attempt - 1);  // 1 s, 2 s, 4 s
     console.debug(`[api] 5xx retry ${attempt}/3 for ${path} (status ${res.status}) — waiting ${delayMs}ms`);
     await new Promise(r => setTimeout(r, delayMs));
-    return apiFetch(path, opts, _retryBudget, _5xxRetries - 1);
-  }
-
-  if (res.status === 401 && _retryBudget > 0) {
-    const refreshResult = await attemptTokenRefresh();
-    if (refreshResult === "refreshed") {
-      return apiFetch(path, opts, _retryBudget - 1);
-    }
-    if (refreshResult === "transient" && _retryBudget > 1) {
-      await new Promise((r) => setTimeout(r, 800));
-      return apiFetch(path, opts, _retryBudget - 1);
-    }
-    if (refreshResult === "transient") {
-      /* Budget exhausted but refresh was transient (network/5xx) — keep tokens, surface recoverable error */
-      throw Object.assign(new Error("Connection issue. Please check your network and try again."), { status: 0, transient: true });
-    }
-    /* auth_failed — refresh token confirmed invalid — session is definitely invalid */
-    triggerLogout("session_expired");
-    const err = await res.json().catch(() => ({ error: "Session expired" }));
-    throw Object.assign(new Error(err.error || "Session expired. Please log in again."), { status: 401 });
+    return apiFetch(path, opts, _5xxRetries - 1);
   }
 
   if (!res.ok) {
@@ -235,7 +197,7 @@ export const api = {
   forgotPassword:(data: { phone?: string; email?: string; identifier?: string }) => apiFetch("/auth/forgot-password", { method: "POST", body: JSON.stringify(data) }),
   resetPassword:(data: { phone?: string; email?: string; identifier?: string; otp: string; newPassword: string; totpCode?: string }) => apiFetch("/auth/reset-password", { method: "POST", body: JSON.stringify(data) }),
   logout:       (refreshToken?: string) => apiFetch("/auth/logout", { method: "POST", headers: { "X-App": "vendor" }, body: JSON.stringify({ refreshToken }) }).finally(clearTokens),
-  refreshToken: () => attemptTokenRefresh(),
+  refreshToken: () => _vendorRefresh(),
   checkAvailable: (data: { phone?: string; email?: string; username?: string }, signal?: AbortSignal) =>
     apiFetch("/auth/check-available", { method: "POST", body: JSON.stringify(data), signal }),
   vendorRegister: (data: { phone: string; storeName: string; storeCategory?: string; name?: string; cnic?: string; address?: string; city?: string; bankName?: string; bankAccount?: string; bankAccountTitle?: string; username?: string; acceptedTermsVersion?: string }) =>
@@ -357,7 +319,7 @@ export const api = {
   uploadVideo: async (file: File): Promise<{ url: string }> => {
     const formData = new FormData();
     formData.append("file", file);
-    /* Disable the default 30s timeout for large video uploads; apiFetch still
+    /* Disable the default timeout for large video uploads; the factory still
        handles token refresh and retry automatically. */
     const result = await apiFetch("/uploads/video", {
       method: "POST",
