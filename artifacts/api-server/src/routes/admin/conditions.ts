@@ -235,6 +235,26 @@ const createConditionRuleSchema = z.object({
   isActive:          z.boolean().optional(),
 });
 
+const patchConditionRuleSchema = z.object({
+  name:              z.string().min(1).max(200).optional(),
+  description:       z.string().max(500).nullable().optional(),
+  targetRole:        z.string().min(1).optional(),
+  metric:            z.string().min(1).optional(),
+  operator:          z.enum([">", "<", ">=", "<=", "==", "!="]).optional(),
+  threshold:         z.union([z.string().min(1), z.number()]).optional(),
+  conditionType:     z.string().min(1).optional(),
+  severity:          z.string().optional(),
+  cooldownHours:     z.number().int().min(0).optional(),
+  modeApplicability: z.string().optional(),
+  isActive:          z.boolean().optional(),
+});
+
+const bulkConditionSchema = z.object({
+  ids:    z.array(z.string().min(1)).min(1, "ids must be a non-empty array"),
+  action: z.enum(["lift", "delete"], { errorMap: () => ({ message: "action must be 'lift' or 'delete'" }) }),
+  reason: z.string().optional(),
+});
+
 export async function reconcileUserFlags(userId: string): Promise<{ success: boolean; conditions?: number; error?: string }> {
   try {
     const conditions = await db
@@ -482,11 +502,13 @@ router.delete("/conditions/:id", async (req, res) => {
 });
 
 router.post("/conditions/bulk", async (req, res) => {
+  const p = bulkConditionSchema.safeParse(req.body ?? {});
+  if (!p.success) {
+    const msg = p.error.errors.map(e => e.message).join("; ");
+    return res.status(400).json({ success: false, error: msg });
+  }
   try {
-    const { ids, action, reason } = req.body ?? {};
-    if (!Array.isArray(ids) || ids.length === 0 || !action) {
-      return res.status(400).json({ success: false, error: "ids[] and action required" });
-    }
+    const { ids, action, reason } = p.data;
     if (action === "lift") {
       const result = await db
         .update(accountConditionsTable)
@@ -560,8 +582,14 @@ router.post("/condition-rules", async (req, res) => {
 });
 
 router.patch("/condition-rules/:id", async (req, res) => {
+  const p = patchConditionRuleSchema.safeParse(req.body ?? {});
+  if (!p.success) {
+    const msg = p.error.errors.map(e => e.message).join("; ");
+    return res.status(400).json({ success: false, error: msg });
+  }
   try {
-    const updates: any = { ...req.body, updatedAt: new Date() };
+    const validated = p.data;
+    const updates: any = { ...validated, updatedAt: new Date() };
     if (updates.threshold !== undefined) updates.threshold = String(updates.threshold);
     if (updates.cooldownHours !== undefined) updates.cooldownHours = Number(updates.cooldownHours);
     const [updated] = await db

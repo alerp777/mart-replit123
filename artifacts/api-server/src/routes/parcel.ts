@@ -40,6 +40,11 @@ const createParcelSchema = z.object({
   dropLng:   z.number().min(-180).max(180).optional(),
 });
 
+const parcelEstimateSchema = z.object({
+  parcelType: z.string().max(50).optional(),
+  weight:     z.number().nonnegative("weight must be non-negative").max(500, "weight cannot exceed 500 kg").optional(),
+});
+
 const router: IRouter = Router();
 
 /* ── Parcel fare = admin base fee + per-kg charge (from delivery_fee_parcel + delivery_parcel_per_kg) ── */
@@ -73,8 +78,13 @@ function mapBooking(b: typeof parcelBookingsTable.$inferSelect) {
 }
 
 router.post("/estimate", publicLimiter, async (req, res) => {
-  const { parcelType, weight } = req.body;
-  const cappedWeight = typeof weight === "number" ? Math.min(Math.max(weight, 0), 500) : undefined;
+  const p = parcelEstimateSchema.safeParse(req.body ?? {});
+  if (!p.success) {
+    sendValidationError(res, p.error.errors.map(e => e.message).join("; "));
+    return;
+  }
+  const { parcelType, weight } = p.data;
+  const cappedWeight = weight !== undefined ? Math.min(Math.max(weight, 0), 500) : undefined;
   const s = await getCachedSettings();
   if (!s["delivery_fee_parcel"] || !s["delivery_parcel_per_kg"]) {
     sendError(res, "Parcel fare settings are not configured. Please contact support.", 503);

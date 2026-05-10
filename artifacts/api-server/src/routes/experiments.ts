@@ -15,6 +15,11 @@ const paginationSchema = z.object({
   status: z.string().optional(),
 });
 
+const assignExperimentSchema = z.object({
+  userId:       z.string().min(1, "userId is required"),
+  experimentId: z.string().min(1, "experimentId is required"),
+});
+
 router.get("/", async (req, res) => {
   const p = paginationSchema.safeParse(req.query);
   if (!p.success) {
@@ -76,11 +81,12 @@ router.get("/:id", async (req, res) => {
 });
 
 router.post("/assign", async (req, res) => {
-  const { userId, experimentId } = req.body ?? {};
-  if (!userId || !experimentId) {
-    sendValidationError(res, "userId and experimentId are required");
+  const p = assignExperimentSchema.safeParse(req.body ?? {});
+  if (!p.success) {
+    sendValidationError(res, p.error.errors.map(e => e.message).join("; "));
     return;
   }
+  const { userId, experimentId } = p.data;
 
   try {
     const [experiment] = await db

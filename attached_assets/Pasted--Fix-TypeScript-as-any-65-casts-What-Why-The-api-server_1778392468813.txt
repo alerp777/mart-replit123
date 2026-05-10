@@ -1,0 +1,48 @@
+ Fix TypeScript as any (65+ casts)
+What & Why
+The api-server has 65+ as any casts spread across 21 files that silence real type errors. These hide bugs at compile time and make refactoring unsafe. The goal is to replace every cast with a proper type so pnpm run typecheck passes with zero as any remaining in those files.
+
+Done looks like
+pnpm run typecheck passes cleanly (no new errors introduced).
+Zero as any casts remain in the files listed below (or any remaining ones carry a // eslint-disable-next-line @typescript-eslint/no-explicit-any comment with a short justification for the rare case it is genuinely unavoidable).
+No runtime behaviour changes — this is a types-only fix.
+Out of scope
+Adding as any suppressions in frontend apps (admin / rider-app / vendor-app / ajkmart).
+Refactoring business logic; only type annotations change.
+Adding new features or changing API contracts.
+Steps
+Define geocoding & routing response interfaces — In routes/maps.ts (or a new src/types/maps.ts), declare typed interfaces for Nominatim, LocationIQ, and OSRM JSON responses (the 15 await fetch().json() as any casts). Replace each cast with the appropriate interface. Fields that are genuinely unknown can be typed as unknown and narrowed at the call site.
+
+Fix Drizzle insert/update casts — In routes/admin/conditions.ts (lines 371, 553, 633) and routes/admin/fleet/rides.ts (lines 249, 611), replace { ... } as any and rows as any with the table's $inferInsert type (e.g. typeof conditionRulesTable.$inferInsert). For partial updates use Partial<typeof table.$inferInsert>. Fix the severity as any Drizzle eq() filter (conditions.ts line 259) by casting to the actual column enum type inferred from the schema.
+
+Fix raw SQL result row casts — In routes/admin/system.ts (lines 779, 2233–2235, 2299, 2700, 3020, 3038), define small typed interfaces for raw query result row shapes and replace (row as any).field with those interfaces. For Redis and socket module dynamic access, use narrower casts (as { info: (section: string) => Promise<string> } etc.) or type guard functions rather than any.
+
+Fix request-object and JWT payload casts — In routes/auth/index.ts (4 casts), routes/kyc.ts (1 cast), routes/admin/broadcasts.ts (3), routes/admin/release-notes.ts (4), and utils/admin-jwt.ts (1): replace (req as any).x with req.x (the property already exists in src/types/express.d.ts). For JWT payloads, define a typed AdminJwtPayload interface and use it instead of any. For (updates as any).acceptedTermsVersion in auth/index.ts, use a Zod-inferred type or extend the request body type.
+
+Fix remaining scattered casts — Address the remaining as any instances in routes/admin/communication.ts (1), routes/communication.ts (1), routes/rides/helpers.ts (2), routes/platform-config.ts (4), routes/pharmacy.ts (4), routes/parcel.ts (1), routes/system.ts (1), services/whatsapp.ts (1), services/admin-user.service.ts (2), routes/webhooks.ts (1), and app.ts (6). For app.ts error-handler response casts, use proper Express Response type narrowing.
+
+Verify with typecheck — Run pnpm run typecheck from the workspace root and resolve any errors introduced by the stricter types. Do not introduce new as any to silence typecheck failures — fix the underlying type mismatch instead.
+
+Relevant files
+artifacts/api-server/src/types/express.d.ts
+artifacts/api-server/src/routes/maps.ts
+artifacts/api-server/src/routes/admin/conditions.ts
+artifacts/api-server/src/routes/admin/system.ts
+artifacts/api-server/src/routes/admin/fleet/rides.ts
+artifacts/api-server/src/routes/auth/index.ts
+artifacts/api-server/src/routes/auth/helpers.ts
+artifacts/api-server/src/utils/admin-jwt.ts
+artifacts/api-server/src/routes/kyc.ts
+artifacts/api-server/src/routes/admin/broadcasts.ts
+artifacts/api-server/src/routes/admin/release-notes.ts
+artifacts/api-server/src/routes/admin/communication.ts
+artifacts/api-server/src/routes/communication.ts
+artifacts/api-server/src/routes/rides/helpers.ts
+artifacts/api-server/src/routes/platform-config.ts
+artifacts/api-server/src/routes/pharmacy.ts
+artifacts/api-server/src/routes/parcel.ts
+artifacts/api-server/src/routes/system.ts
+artifacts/api-server/src/services/whatsapp.ts
+artifacts/api-server/src/services/admin-user.service.ts
+artifacts/api-server/src/routes/webhooks.ts
+artifacts/api-server/src/app.ts
