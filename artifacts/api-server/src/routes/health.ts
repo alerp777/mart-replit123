@@ -14,7 +14,7 @@ const SERVER_EPOCH = Math.round(Date.now() / 1000 - process.uptime());
 
 router.get("/", async (_req, res) => {
   let dbStatus: "ok" | "error" = "ok";
-  let redisStatus: "ok" | "error" | "unavailable" = "unavailable";
+  let redisStatus: "ok" | "error" | "disabled" = "disabled";
 
   const DB_TIMEOUT_MS = 2000;
   const REDIS_TIMEOUT_MS = 2000;
@@ -35,7 +35,7 @@ router.get("/", async (_req, res) => {
     })(),
     (async () => {
       if (!redisClient) {
-        redisStatus = "unavailable";
+        redisStatus = "disabled";
         return;
       }
       try {
@@ -53,7 +53,7 @@ router.get("/", async (_req, res) => {
   ]);
 
   const db2 = dbStatus as "ok" | "error";
-  const redis2 = redisStatus as "ok" | "error" | "unavailable";
+  const redis2 = redisStatus as "ok" | "error" | "disabled";
   const overallStatus: "ok" | "degraded" | "down" =
     db2 === "error" ? "down" : redis2 === "error" ? "degraded" : "ok";
 
