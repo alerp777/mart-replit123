@@ -1,0 +1,10 @@
+#!/bin/sh
+# AJKMart pre-commit hook
+# ─────────────────────────────────────────────────────────────────────────────
+# Scans only the files you are about to commit for hardcoded secrets.
+# Blocks the commit and prints findings if any are detected.
+# To bypass in an emergency:  git commit --no-verify
+# To suppress a false positive: add  // audit-ok  to the flagged line.
+# ─────────────────────────────────────────────────────────────────────────────
+
+node scripts/audit-secrets.mjs --no-env --no-rotation --staged

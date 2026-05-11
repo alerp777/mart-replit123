@@ -78,6 +78,7 @@ ${col(C.cyan, 'OPTIONS')}
   ${col(C.green, '--no-scan')}        Skip Phase C hardcoded secret scan
   ${col(C.green, '--no-env')}         Skip Phase A env var check
   ${col(C.green, '--no-rotation')}    Skip Phase B rotation age check
+  ${col(C.green, '--staged')}         Phase C only scans git-staged files (used by pre-commit hook)
   ${col(C.green, '--json')}           Emit summary as JSON (for CI integration)
   ${col(C.green, '--help')}           Show this message
 `);
@@ -89,6 +90,7 @@ const PASSWORD                = flagVal('--password') || process.env.ENV_PASSWOR
 const SKIP_SCAN               = hasFlag('--no-scan');
 const SKIP_ENV                = hasFlag('--no-env');
 const SKIP_ROTATION           = hasFlag('--no-rotation');
+const STAGED_MODE             = hasFlag('--staged');
 const JSON_OUTPUT             = hasFlag('--json');
 
 // ── Variable lists ────────────────────────────────────────────────────────────
@@ -482,17 +484,47 @@ async function main() {
      PHASE C — Hardcoded secret scan
   ═══════════════════════════════════════════════════════════════════════════ */
   if (!SKIP_SCAN) {
-    if (!JSON_OUTPUT) console.log(bold('  Phase C — Hardcoded secret scan'));
+    if (!JSON_OUTPUT) {
+      const modeLabel = STAGED_MODE ? dim(' (staged files only)') : '';
+      console.log(bold(`  Phase C — Hardcoded secret scan${modeLabel}`));
+    }
 
     const scanFindings = [];
     let filesScanned   = 0;
 
-    for (const dir of SCAN_DIRS) {
-      if (!existsSync(dir)) continue;
-      for (const filePath of walkFiles(dir)) {
+    if (STAGED_MODE) {
+      // ── Staged-file mode: only scan files in the git index ─────────────────
+      const { execSync } = await import('node:child_process');
+      let stagedOutput = '';
+      try {
+        stagedOutput = execSync(
+          'git diff --cached --name-only --diff-filter=ACM',
+          { encoding: 'utf8', cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'] },
+        );
+      } catch { /* not a git repo or no staged files — scan nothing */ }
+
+      const stagedPaths = stagedOutput
+        .trim().split('\n').filter(Boolean)
+        .map(f => path.join(ROOT, f))
+        .filter(filePath => {
+          const ext = path.extname(filePath);
+          if (SKIP_SUFFIX.some(s => filePath.endsWith(s))) return false;
+          if (!SCAN_EXTS.has(ext) && !filePath.endsWith('.env.example')) return false;
+          try { return statSync(filePath).size < 500_000; } catch { return false; }
+        });
+
+      for (const filePath of stagedPaths) {
         filesScanned++;
-        const found = scanFile(filePath);
-        scanFindings.push(...found);
+        scanFindings.push(...scanFile(filePath));
+      }
+    } else {
+      // ── Full scan: walk all configured source directories ──────────────────
+      for (const dir of SCAN_DIRS) {
+        if (!existsSync(dir)) continue;
+        for (const filePath of walkFiles(dir)) {
+          filesScanned++;
+          scanFindings.push(...scanFile(filePath));
+        }
       }
     }
 
