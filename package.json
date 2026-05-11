@@ -38,10 +38,15 @@
     "setup": "bash scripts/setup.sh",
     "db:migrate": "node scripts/migrate.mjs",
     "db:generate": "pnpm --filter @workspace/db generate",
-    "db:seed": "curl -sf -X POST http://localhost:${PORT:-5000}/api/seed/full -H \"x-admin-seed-key: ${DEV_SEED_KEY:-local-dev-seed-ajkmart}\" -H 'Content-Type: application/json' | node -e \"process.stdin.resume(); let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{try{const r=JSON.parse(d);console.log(JSON.stringify(r,null,2));}catch{console.log(d);}});\"",    "decrypt-env": "node scripts/env-manager.mjs decrypt",
+    "db:seed": "curl -sf -X POST http://localhost:${PORT:-5000}/api/seed/full -H \"x-admin-seed-key: ${DEV_SEED_KEY:-local-dev-seed-ajkmart}\" -H 'Content-Type: application/json' | node -e \"process.stdin.resume(); let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{try{const r=JSON.parse(d);console.log(JSON.stringify(r,null,2));}catch{console.log(d);}});\"",
+    "create-env": "node scripts/create-env.mjs",
+    "create-env:merge": "node scripts/create-env.mjs --merge",
+    "create-env:prod": "node scripts/create-env.mjs --merge --force",
+    "decrypt-env": "node scripts/env-manager.mjs decrypt",
     "encrypt-env": "node scripts/env-manager.mjs encrypt",
     "setup-env": "node scripts/env-manager.mjs setup",
-    "reset-env": "node scripts/env-manager.mjs reset",    "prepare": "husky"
+    "reset-env": "node scripts/env-manager.mjs reset",
+    "prepare": "husky"
   },
   "lint-staged": {
     "artifacts/admin/src/**/*.{ts,tsx}": [
